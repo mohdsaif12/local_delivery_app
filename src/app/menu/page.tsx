@@ -7,6 +7,7 @@ import { Plus, Minus, X, Heart, Star, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import NavBar from '@/components/NavBar'
 import BottomNav from '@/components/BottomNav'
+import CartBar from '@/components/CartBar'
 import { MENU, TOPPINGS_MAP, MenuItem } from '@/lib/menu'
 
 const CATEGORIES = ['Popular', 'Biryani', 'Gravy', 'Breads', 'Fry', 'Kebabs', 'Tandoor', 'Combos', 'Desserts']
@@ -219,7 +220,7 @@ export default function MenuPage() {
 
       <NavBar role="customer" />
 
-      <main className="phone-screen pb-28">
+      <main className="phone-screen pb-40">
 
         {/* ── Hero Banner ── */}
         <div className="relative h-52 overflow-hidden">
@@ -296,6 +297,7 @@ export default function MenuPage() {
         )}
       </main>
 
+      <CartBar />
       <BottomNav />
 
       {/* ── Slide-up Details Modal ── */}
