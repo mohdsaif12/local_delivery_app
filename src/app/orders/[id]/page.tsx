@@ -11,6 +11,7 @@ import {
   HelpCircle,
   Check,
   ChefHat,
+  Package,
   Bike,
   Compass,
   Phone,
@@ -57,13 +58,14 @@ const STATUS_ORDER: OrderStatus[] = [
   'delivered',
 ]
 
-// Map DB status + payment_status → visual stepper step (0-based, 4 steps)
+// Map DB status + payment_status → visual stepper step (0-based, 5 steps)
 function currentStep(order: OrderData): number {
   if (order.status === 'pending' && order.payment_status === 'pending_verification') return 0
   if (order.status === 'pending' || order.status === 'accepted') return 1
   if (order.status === 'preparing') return 1
-  if (order.status === 'ready' || order.status === 'out_for_delivery') return 2
-  if (order.status === 'delivered') return 3
+  if (order.status === 'ready') return 2
+  if (order.status === 'out_for_delivery') return 3
+  if (order.status === 'delivered') return 4
   return 0
 }
 
@@ -202,6 +204,11 @@ export default function OrderStatusPage({
           ? 'Waiting for payment verification'
           : 'The chef is adding the final touches to your Biryani',
       icon: ChefHat,
+    },
+    {
+      label: 'Ready for Pickup',
+      desc: 'Food is packed and waiting for the rider',
+      icon: Package,
     },
     {
       label: 'Out for Delivery',
