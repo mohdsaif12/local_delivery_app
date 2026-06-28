@@ -121,7 +121,36 @@ function LocationContent() {
     const {
       data: { user },
     } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) {
+      setSaving(false)
+      return
+    }
+
+    let lat = formCoords?.lat ?? null
+    let lng = formCoords?.lng ?? null
+
+    // If coordinates are null, geocode the typed address using Google Maps Geocoding API
+    if (lat === null || lng === null) {
+      try {
+        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY
+        if (apiKey) {
+          const addressStr = `${form.address}${form.landmark ? ', ' + form.landmark : ''}, ${form.pincode}`
+          const response = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(addressStr)}&key=${apiKey}`
+          )
+          const data = await response.json()
+          if (data.status === 'OK' && data.results && data.results.length > 0) {
+            const loc = data.results[0].geometry.location
+            lat = loc.lat
+            lng = loc.lng
+          } else {
+            console.warn('Geocoding not successful: status =', data.status)
+          }
+        }
+      } catch (err) {
+        console.error('Error during manual address geocoding:', err)
+      }
+    }
 
     await supabase.from('addresses').update({ is_default: false }).eq('customer_id', user.id)
     const { error: insertError } = await supabase.from('addresses').insert({
@@ -130,8 +159,8 @@ function LocationContent() {
       address: form.address.trim(),
       landmark: form.landmark.trim() || null,
       pincode: form.pincode.trim(),
-      latitude: formCoords?.lat ?? null,
-      longitude: formCoords?.lng ?? null,
+      latitude: lat,
+      longitude: lng,
       is_default: true,
     })
 
