@@ -43,6 +43,11 @@ export default function LiveMap({ orderId, restaurantCoords, customerCoords }: L
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const riderMarkerRef = useRef<any>(null)
 
+  // Serialize coords to strings so the effect only re-runs when values actually change,
+  // not every time the parent re-renders and creates new object references.
+  const restaurantKey = restaurantCoords ? `${restaurantCoords.lat},${restaurantCoords.lng}` : 'null'
+  const customerKey = customerCoords ? `${customerCoords.lat},${customerCoords.lng}` : 'null'
+
   useEffect(() => {
     let isMounted = true
     const supabase = createClient()
@@ -52,6 +57,14 @@ export default function LiveMap({ orderId, restaurantCoords, customerCoords }: L
     if (!apiKey) return
 
     ensureMapsOptions(apiKey)
+
+    // Re-parse coords from keys so closure captures stable values
+    const rCoords = restaurantKey !== 'null'
+      ? { lat: parseFloat(restaurantKey.split(',')[0]), lng: parseFloat(restaurantKey.split(',')[1]) }
+      : null
+    const cCoords = customerKey !== 'null'
+      ? { lat: parseFloat(customerKey.split(',')[0]), lng: parseFloat(customerKey.split(',')[1]) }
+      : null
 
     Promise.all([
       importLibrary('maps'),
@@ -71,7 +84,7 @@ export default function LiveMap({ orderId, restaurantCoords, customerCoords }: L
       })
 
       const fallbackCenter = { lat: 26.4499, lng: 80.3319 } // Kanpur
-      const center = restaurantCoords ?? customerCoords ?? fallbackCenter
+      const center = rCoords ?? cCoords ?? fallbackCenter
 
       const map = new Map(mapRef.current, {
         center,
@@ -85,9 +98,9 @@ export default function LiveMap({ orderId, restaurantCoords, customerCoords }: L
       const bounds = new LatLngBounds()
 
       // Dashed reference route between restaurant and customer
-      if (restaurantCoords && customerCoords) {
+      if (rCoords && cCoords) {
         new Polyline({
-          path: [restaurantCoords, customerCoords],
+          path: [rCoords, cCoords],
           map,
           strokeOpacity: 0,
           icons: [
@@ -100,31 +113,31 @@ export default function LiveMap({ orderId, restaurantCoords, customerCoords }: L
         })
       }
 
-      if (restaurantCoords) {
+      if (rCoords) {
         new Marker({
-          position: restaurantCoords,
+          position: rCoords,
           map,
           icon: badgeIcon('#b51c00', 15),
           label: { text: '🍴', fontSize: '13px' },
           title: 'Restaurant',
           zIndex: 10,
         })
-        bounds.extend(restaurantCoords)
+        bounds.extend(rCoords)
       }
 
-      if (customerCoords) {
+      if (cCoords) {
         new Marker({
-          position: customerCoords,
+          position: cCoords,
           map,
           icon: badgeIcon('#191c1d', 15),
           label: { text: '🏠', fontSize: '13px' },
           title: 'Delivery address',
           zIndex: 10,
         })
-        bounds.extend(customerCoords)
+        bounds.extend(cCoords)
       }
 
-      if (restaurantCoords && customerCoords) {
+      if (rCoords && cCoords) {
         map.fitBounds(bounds, 50)
       }
 
@@ -179,7 +192,8 @@ export default function LiveMap({ orderId, restaurantCoords, customerCoords }: L
       isMounted = false
       if (channel) supabase.removeChannel(channel)
     }
-  }, [orderId, restaurantCoords, customerCoords])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, restaurantKey, customerKey])
 
   if (!process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY) {
     return (
