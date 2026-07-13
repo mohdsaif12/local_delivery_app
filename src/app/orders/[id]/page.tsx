@@ -103,10 +103,12 @@ interface OrderData {
   delivery_longitude: number | null
   created_at: string
   rider_id: string | null
+  eta_minutes: number | null
   unavailable_items: string[] | null
   modified_total: number | null
   order_items: OrderItem[]
   restaurants: { latitude: number | null; longitude: number | null } | null
+  rider: { full_name: string | null; phone: string | null } | null
 }
 
 const STATUS_ORDER: OrderStatus[] = [
@@ -347,8 +349,9 @@ export default function OrderStatusPage({
       .select(
         `id, order_number, status, payment_status, utr_number, total, delivery_fee,
          cancellation_reason, delivery_address, delivery_latitude, delivery_longitude,
-         created_at, rider_id, unavailable_items, modified_total,
+         created_at, rider_id, eta_minutes, unavailable_items, modified_total,
          restaurants(latitude, longitude),
+         rider:profiles!rider_id(full_name, phone),
          order_items(id, quantity, price_at_order, products(name))`
       )
       .eq('id', id)
@@ -493,7 +496,8 @@ export default function OrderStatusPage({
   const hasMapData = !isCancelled && (restaurantCoords || customerCoords)
 
   const createdDate = new Date(order.created_at)
-  const etaDate = new Date(createdDate.getTime() + 30 * 60 * 1000)
+  const etaMinutes = order.eta_minutes ?? 30
+  const etaDate = new Date(createdDate.getTime() + etaMinutes * 60 * 1000)
   const etaStr = etaDate.toLocaleTimeString('en-IN', {
     hour: '2-digit',
     minute: '2-digit',
@@ -805,19 +809,14 @@ export default function OrderStatusPage({
               style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
             >
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80"
-                    className="w-full h-full object-cover"
-                    alt="Rider"
-                  />
+                <div className="w-12 h-12 rounded-full bg-[#1B4332] flex-shrink-0 border border-gray-200 flex items-center justify-center text-white text-lg font-bold">
+                  {order.rider?.full_name ? order.rider.full_name.charAt(0).toUpperCase() : '🛵'}
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-gray-900">Arjun Sharma</h4>
+                  <h4 className="text-xs font-bold text-gray-900">{order.rider?.full_name ?? 'Rider Assigned'}</h4>
                   <p className="text-[10px] text-gray-500 font-semibold flex items-center gap-1 mt-0.5">
                     <Star className="size-3 fill-amber-400 text-amber-400" />
-                    4.9 · Valued Rider
+                    On the way to you
                   </p>
                 </div>
               </div>
