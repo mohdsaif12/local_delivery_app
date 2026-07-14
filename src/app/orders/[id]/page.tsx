@@ -496,7 +496,7 @@ export default function OrderStatusPage({
   const hasMapData = !isCancelled && (restaurantCoords || customerCoords)
 
   const createdDate = new Date(order.created_at)
-  const etaMinutes = (order.eta_minutes ?? 30) + 10
+  const etaMinutes = (order.eta_minutes || 30) + 10
   const etaDate = new Date(createdDate.getTime() + etaMinutes * 60 * 1000)
   const etaStr = etaDate.toLocaleTimeString('en-IN', {
     hour: '2-digit',
