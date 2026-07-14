@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useCartStore } from '@/store/cart'
 import { Plus, Minus, X, Heart, Star, Clock, Search } from 'lucide-react'
@@ -11,6 +11,39 @@ import PushSetup from '@/components/PushSetup'
 import IOSInstallPrompt from '@/components/IOSInstallPrompt'
 import { Product } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
+
+interface RestaurantSettings {
+  id: string
+  is_open: boolean
+  opening_time: string
+  closing_time: string
+}
+
+function parseTimeToMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + (m || 0)
+}
+
+function getCurrentISTMinutes(): number {
+  const s = new Date().toLocaleTimeString('en-IN', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata',
+  })
+  const [h, m] = s.split(':').map(Number)
+  return h * 60 + (m || 0)
+}
+
+function formatTime12(t?: string): string {
+  if (!t) return ''
+  const [h, m] = t.split(':').map(Number)
+  return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
+}
+
+function computeIsOpen(s: RestaurantSettings | null): boolean {
+  if (!s) return true
+  if (!s.is_open) return false
+  const now = getCurrentISTMinutes()
+  return now >= parseTimeToMinutes(s.opening_time) && now < parseTimeToMinutes(s.closing_time)
+}
 
 const CATEGORIES = ['Popular', 'Biryani', 'Fry', 'Gravy', 'Kebabs', 'Tandoor', 'Breads', 'Dessert']
 
@@ -30,9 +63,10 @@ function getCategoryEmoji(category: string) {
 interface MenuItemCardProps {
   item: Product
   onClick: () => void
+  restaurantOpen: boolean
 }
 
-function MenuItemCard({ item, onClick }: MenuItemCardProps) {
+function MenuItemCard({ item, onClick, restaurantOpen }: MenuItemCardProps) {
   const addItem = useCartStore((s) => s.addItem)
   const updateQuantity = useCartStore((s) => s.updateQuantity)
   const qty = useCartStore((s) =>
@@ -79,8 +113,9 @@ function MenuItemCard({ item, onClick }: MenuItemCardProps) {
             <span className="font-extrabold text-[#c0392b] text-base">₹{item.price}</span>
             {qty === 0 ? (
               <button
-                onClick={handleAdd}
-                className="w-8 h-8 bg-[#c0392b] text-white rounded-full flex items-center justify-center shadow-md shadow-[#c0392b]/20 active:scale-90 transition-transform cursor-pointer"
+                onClick={restaurantOpen ? handleAdd : (e) => { e.preventDefault(); e.stopPropagation() }}
+                disabled={!restaurantOpen}
+                className={`w-8 h-8 rounded-full flex items-center justify-center shadow-md active:scale-90 transition-transform ${restaurantOpen ? 'bg-[#c0392b] text-white shadow-[#c0392b]/20 cursor-pointer' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
               >
                 <Plus className="size-4" />
               </button>
@@ -142,6 +177,8 @@ export default function MenuPage() {
   
   const [MENU, setMENU] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
+  const [restaurantSettings, setRestaurantSettings] = useState<RestaurantSettings | null>(null)
+  const [tick, setTick] = useState(0)
 
   const [selectedItem, setSelectedItem] = useState<Product | null>(null)
   const [quantity, setQuantity] = useState(1)
@@ -152,12 +189,34 @@ export default function MenuPage() {
 
   useEffect(() => {
     supabase.from('products').select('*').order('created_at').then(({ data }) => {
-      if (data) {
-        setMENU(data.filter(d => d.is_available))
-      }
+      if (data) setMENU(data.filter(d => d.is_available))
       setLoading(false)
     })
   }, [supabase])
+
+  // Fetch restaurant open/close status and subscribe to realtime changes
+  useEffect(() => {
+    supabase.from('restaurants').select('id, is_open, opening_time, closing_time').limit(1).single()
+      .then(({ data }) => { if (data) setRestaurantSettings(data) })
+
+    const ch = supabase.channel('restaurant-open-status')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'restaurants' }, (payload) => {
+        const row = payload.new as RestaurantSettings
+        setRestaurantSettings(row)
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(ch) }
+  }, [supabase])
+
+  // Re-evaluate time-based open status every minute
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60000)
+    return () => clearInterval(id)
+  }, [])
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const effectivelyOpen = useMemo(() => computeIsOpen(restaurantSettings), [restaurantSettings, tick])
 
   function getCategoryCount(cat: string): number {
     if (cat === 'Popular') return MENU.filter(i => i.name.toLowerCase().includes('butter chicken') || i.name.toLowerCase() === 'chicken biryani').length
@@ -293,9 +352,17 @@ export default function MenuPage() {
         }
       ` }} />
 
-      <NavBar role="customer" onSearchClick={openSearch} />
+      <NavBar role="customer" onSearchClick={openSearch} isOpen={effectivelyOpen} openingTime={restaurantSettings?.opening_time} />
       <PushSetup />
       <IOSInstallPrompt variant="menu" />
+
+      {/* Closed banner */}
+      {!effectivelyOpen && (
+        <div className="bg-red-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-14 z-40">
+          🔴 We&apos;re Closed
+          {restaurantSettings?.opening_time && ` · Opens at ${formatTime12(restaurantSettings.opening_time)}`}
+        </div>
+      )}
 
       {/* Search bar */}
       {searchOpen && (
@@ -374,7 +441,7 @@ export default function MenuPage() {
                 <div key={section.title}>
                   <h3 className="text-base font-extrabold text-gray-900 mb-3">{section.title}</h3>
                   <div className="space-y-3">
-                    {items.map((item) => <MenuItemCard key={item.id} item={item} onClick={() => handleSelectProduct(item)} />)}
+                    {items.map((item) => <MenuItemCard key={item.id} item={item} onClick={() => handleSelectProduct(item)} restaurantOpen={effectivelyOpen} />)}
                   </div>
                 </div>
               )
@@ -386,14 +453,14 @@ export default function MenuPage() {
               <p className="text-center text-gray-400 py-16 text-sm">{q ? `No results for "${searchQuery}"` : 'No items in this category.'}</p>
             ) : (
               <div className="space-y-3">
-                {filteredItems.map((item) => <MenuItemCard key={item.id} item={item} onClick={() => handleSelectProduct(item)} />)}
+                {filteredItems.map((item) => <MenuItemCard key={item.id} item={item} onClick={() => handleSelectProduct(item)} restaurantOpen={effectivelyOpen} />)}
               </div>
             )}
           </div>
         )}
       </main>
 
-      <CartBar />
+      {effectivelyOpen && <CartBar />}
       <BottomNav />
 
       {/* ── Slide-up Details Modal ── */}
@@ -538,10 +605,11 @@ export default function MenuPage() {
 
               {/* Add to Cart button */}
               <button
-                onClick={handleModalAddToCart}
-                className="flex-1 h-13 bg-[#c0392b] hover:bg-[#a93226] text-white font-extrabold rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-[#c0392b]/20 active:scale-[0.98] transition-all cursor-pointer text-sm"
+                onClick={effectivelyOpen ? handleModalAddToCart : undefined}
+                disabled={!effectivelyOpen}
+                className={`flex-1 h-13 font-extrabold rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition-all text-sm ${effectivelyOpen ? 'bg-[#c0392b] hover:bg-[#a93226] text-white shadow-[#c0392b]/20 cursor-pointer' : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'}`}
               >
-                Add to Cart &bull; ₹{itemTotalPrice}
+                {effectivelyOpen ? `Add to Cart • ₹${itemTotalPrice}` : '🔴 Restaurant Closed'}
               </button>
             </div>
           </div>

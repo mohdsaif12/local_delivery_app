@@ -313,6 +313,19 @@ const STATUS_PUSH: Partial<Record<string, { title: string; body: string }>> = {
   cancelled:        { title: '❌ Order Cancelled',        body: 'Your order was cancelled by the restaurant.' },
 }
 
+interface RestaurantStatus {
+  id: string
+  is_open: boolean
+  opening_time: string
+  closing_time: string
+}
+
+function fmtTime(t?: string): string {
+  if (!t) return ''
+  const [h, m] = t.split(':').map(Number)
+  return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
+}
+
 interface Props {
   initialOrders: Order[]
 }
@@ -322,6 +335,30 @@ export default function DashboardClient({ initialOrders }: Props) {
   const [updating, setUpdating] = useState<string | null>(null)
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null)
   const [acceptingOrderId, setAcceptingOrderId] = useState<string | null>(null)
+  const [restaurantStatus, setRestaurantStatus] = useState<RestaurantStatus | null>(null)
+  const [togglingStatus, setTogglingStatus] = useState(false)
+
+  // Fetch restaurant open/close status
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.from('restaurants').select('id, is_open, opening_time, closing_time').limit(1).single()
+      .then(({ data }) => { if (data) setRestaurantStatus(data) })
+  }, [])
+
+  async function toggleRestaurantOpen() {
+    if (!restaurantStatus) return
+    setTogglingStatus(true)
+    const supabase = createClient()
+    const newVal = !restaurantStatus.is_open
+    const { error } = await supabase.from('restaurants').update({ is_open: newVal }).eq('id', restaurantStatus.id)
+    if (!error) {
+      setRestaurantStatus({ ...restaurantStatus, is_open: newVal })
+      toast.success(newVal ? '🟢 Restaurant is now Open' : '🔴 Restaurant is now Closed')
+    } else {
+      toast.error('Failed to update status')
+    }
+    setTogglingStatus(false)
+  }
 
   useEffect(() => {
     const supabase = createClient()
@@ -442,18 +479,42 @@ export default function DashboardClient({ initialOrders }: Props) {
     setUpdating(null)
   }
 
+  const statusCard = restaurantStatus && (
+    <div className={`mb-4 rounded-2xl p-4 border-2 flex items-center justify-between ${restaurantStatus.is_open ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+      <div>
+        <p className={`text-sm font-extrabold ${restaurantStatus.is_open ? 'text-green-700' : 'text-red-700'}`}>
+          {restaurantStatus.is_open ? '🟢 Restaurant is Open' : '🔴 Restaurant is Closed'}
+        </p>
+        <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+          Hours: {fmtTime(restaurantStatus.opening_time)} – {fmtTime(restaurantStatus.closing_time)}
+        </p>
+      </div>
+      <button
+        onClick={toggleRestaurantOpen}
+        disabled={togglingStatus}
+        className={`relative w-12 h-6 rounded-full transition-colors disabled:opacity-50 flex-shrink-0 ${restaurantStatus.is_open ? 'bg-green-500' : 'bg-gray-300'}`}
+      >
+        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${restaurantStatus.is_open ? 'translate-x-6' : 'translate-x-0'}`} />
+      </button>
+    </div>
+  )
+
   if (orders.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <span className="text-5xl mb-4">🍳</span>
-        <p className="font-medium text-gray-900 mb-1">No orders yet</p>
-        <p className="text-sm text-muted-foreground">Waiting for customers to place orders</p>
-      </div>
+      <>
+        {statusCard}
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <span className="text-5xl mb-4">🍳</span>
+          <p className="font-medium text-gray-900 mb-1">No orders yet</p>
+          <p className="text-sm text-muted-foreground">Waiting for customers to place orders</p>
+        </div>
+      </>
     )
   }
 
   return (
     <>
+      {statusCard}
       {/* Cancel Reason Modal */}
       {cancellingOrderId && (
         <CancelReasonModal

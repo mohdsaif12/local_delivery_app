@@ -11,9 +11,19 @@ interface Props {
   title?: string
   showBack?: boolean
   onSearchClick?: () => void
+  isOpen?: boolean
+  openingTime?: string
 }
 
-export default function NavBar({ role, title, showBack, onSearchClick }: Props) {
+function formatTime12(timeStr?: string): string {
+  if (!timeStr) return ''
+  const [h, m] = timeStr.split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const hour12 = h % 12 || 12
+  return `${hour12}:${String(m || 0).padStart(2, '0')} ${period}`
+}
+
+export default function NavBar({ role, title, showBack, onSearchClick, isOpen, openingTime }: Props) {
   const router = useRouter()
   const itemCount = useCartStore((s) => s.items.reduce((sum, i) => sum + i.quantity, 0))
 
@@ -67,8 +77,10 @@ export default function NavBar({ role, title, showBack, onSearchClick }: Props) 
             </h1>
             {!showBack && (
               <p className="text-[11px] text-gray-400 font-medium flex items-center gap-1 mt-0.5">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
-                25–35 mins &bull; 0.6 km
+                <span className={`inline-block w-1.5 h-1.5 rounded-full ${isOpen === false ? 'bg-red-500' : 'bg-green-500'}`} />
+                {isOpen === false
+                  ? openingTime ? `Closed · Opens at ${formatTime12(openingTime)}` : 'Closed'
+                  : '25–35 mins • 0.6 km'}
               </p>
             )}
           </div>
