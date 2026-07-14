@@ -19,18 +19,6 @@ interface RestaurantSettings {
   closing_time: string
 }
 
-function parseTimeToMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + (m || 0)
-}
-
-function getCurrentISTMinutes(): number {
-  const s = new Date().toLocaleTimeString('en-IN', {
-    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata',
-  })
-  const [h, m] = s.split(':').map(Number)
-  return h * 60 + (m || 0)
-}
 
 function formatTime12(t?: string): string {
   if (!t) return ''
@@ -40,9 +28,7 @@ function formatTime12(t?: string): string {
 
 function computeIsOpen(s: RestaurantSettings | null): boolean {
   if (!s) return true
-  if (!s.is_open) return false
-  const now = getCurrentISTMinutes()
-  return now >= parseTimeToMinutes(s.opening_time) && now < parseTimeToMinutes(s.closing_time)
+  return s.is_open
 }
 
 const CATEGORIES = ['Popular', 'Biryani', 'Fry', 'Gravy', 'Kebabs', 'Tandoor', 'Breads', 'Dessert']
@@ -178,7 +164,6 @@ export default function MenuPage() {
   const [MENU, setMENU] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [restaurantSettings, setRestaurantSettings] = useState<RestaurantSettings | null>(null)
-  const [tick, setTick] = useState(0)
 
   const [selectedItem, setSelectedItem] = useState<Product | null>(null)
   const [quantity, setQuantity] = useState(1)
@@ -209,14 +194,7 @@ export default function MenuPage() {
     return () => { supabase.removeChannel(ch) }
   }, [supabase])
 
-  // Re-evaluate time-based open status every minute
-  useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), 60000)
-    return () => clearInterval(id)
-  }, [])
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const effectivelyOpen = useMemo(() => computeIsOpen(restaurantSettings), [restaurantSettings, tick])
+  const effectivelyOpen = useMemo(() => computeIsOpen(restaurantSettings), [restaurantSettings])
 
   function getCategoryCount(cat: string): number {
     if (cat === 'Popular') return MENU.filter(i => i.name.toLowerCase().includes('butter chicken') || i.name.toLowerCase() === 'chicken biryani').length
