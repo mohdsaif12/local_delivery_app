@@ -17,6 +17,7 @@ export interface Product {
   price: number
   photo_url: string | null
   is_available: boolean
+  is_veg: boolean | null
   category: string
   variants: { name: string; price: number }[]
 }

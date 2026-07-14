@@ -87,6 +87,11 @@ function MenuItemCard({ item, onClick, restaurantOpen }: MenuItemCardProps) {
         {/* Text */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
+            {item.is_veg !== null && (
+              <span className={`inline-flex items-center justify-center w-4 h-4 border-2 rounded-sm flex-shrink-0 ${item.is_veg ? 'border-green-600' : 'border-red-700'}`}>
+                <span className={`w-2 h-2 rounded-full ${item.is_veg ? 'bg-green-600' : 'bg-red-700'}`} />
+              </span>
+            )}
             {isBestseller && (
               <span className="bg-[#fff0ee] text-[#c0392b] text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide">
                 Best Seller
@@ -299,6 +304,7 @@ export default function MenuPage() {
       description: selectedItem.description,
       photo_url: selectedItem.photo_url,
       is_available: true,
+      is_veg: selectedItem.is_veg,
       category: selectedItem.category,
       variants: []
     })
@@ -490,9 +496,16 @@ export default function MenuPage() {
 
               {/* Title & Price Row */}
               <div className="flex justify-between items-start mb-2">
-                <h2 className="text-xl font-extrabold text-gray-900 leading-tight pr-4">
-                  {selectedItem.name}
-                </h2>
+                <div className="flex items-center gap-2 pr-4">
+                  {selectedItem.is_veg !== null && (
+                    <span className={`inline-flex items-center justify-center w-5 h-5 border-2 rounded-sm flex-shrink-0 ${selectedItem.is_veg ? 'border-green-600' : 'border-red-700'}`}>
+                      <span className={`w-2.5 h-2.5 rounded-full ${selectedItem.is_veg ? 'bg-green-600' : 'bg-red-700'}`} />
+                    </span>
+                  )}
+                  <h2 className="text-xl font-extrabold text-gray-900 leading-tight">
+                    {selectedItem.name}
+                  </h2>
+                </div>
                 <span className="text-xl font-extrabold text-[#c0392b] flex-shrink-0">
                   ₹{selectedItem.price}
                 </span>

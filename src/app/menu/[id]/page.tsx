@@ -96,6 +96,7 @@ export default function ProductDetailPage({
       description: product.description,
       photo_url: product.photo_url,
       is_available: true,
+      is_veg: product.is_veg ?? null,
       category: product.category,
       variants: []
     })
