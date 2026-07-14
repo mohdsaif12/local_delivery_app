@@ -107,7 +107,7 @@ interface OrderData {
   unavailable_items: string[] | null
   modified_total: number | null
   order_items: OrderItem[]
-  restaurants: { latitude: number | null; longitude: number | null; eta_minutes: number | null } | null
+  restaurants: { latitude: number | null; longitude: number | null } | null
   rider: { full_name: string | null; phone: string | null } | null
 }
 
@@ -350,7 +350,7 @@ export default function OrderStatusPage({
         `id, order_number, status, payment_status, utr_number, total, delivery_fee,
          cancellation_reason, delivery_address, delivery_latitude, delivery_longitude,
          created_at, rider_id, eta_minutes, unavailable_items, modified_total,
-         restaurants(latitude, longitude, eta_minutes),
+         restaurants(latitude, longitude),
          rider:profiles!rider_id(full_name, phone),
          order_items(id, quantity, price_at_order, products(name))`
       )
@@ -496,7 +496,7 @@ export default function OrderStatusPage({
   const hasMapData = !isCancelled && (restaurantCoords || customerCoords)
 
   const createdDate = new Date(order.created_at)
-  const etaMinutes = (order.eta_minutes || order.restaurants?.eta_minutes || 30) + 10
+  const etaMinutes = (order.eta_minutes || 30) + 10
   const etaDate = new Date(createdDate.getTime() + etaMinutes * 60 * 1000)
   const etaStr = etaDate.toLocaleTimeString('en-IN', {
     hour: '2-digit',
