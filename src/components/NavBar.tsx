@@ -80,7 +80,7 @@ export default function NavBar({ role, title, showBack, onSearchClick, isOpen, o
                 <span className={`inline-block w-1.5 h-1.5 rounded-full ${isOpen === false ? 'bg-red-500' : 'bg-green-500'}`} />
                 {isOpen === false
                   ? openingTime ? `Closed · Opens at ${formatTime12(openingTime)}` : 'Closed'
-                  : '25–35 mins • 0.6 km'}
+                  : 'Open • 25–35 mins • 0.6 km'}
               </p>
             )}
           </div>

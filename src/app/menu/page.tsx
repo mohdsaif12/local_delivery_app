@@ -33,6 +33,16 @@ function computeIsOpen(s: RestaurantSettings | null): boolean {
 
 const CATEGORIES = ['Popular', 'Biryani', 'Fry', 'Gravy', 'Kebabs', 'Tandoor', 'Breads', 'Dessert']
 
+// Images that auto-rotate on the hero banner.
+// To change them yourself: replace the files in  public/hero/  keeping the
+// same names (hero-1.png … hero-4.png). To add/remove slides, edit this list.
+const HERO_IMAGES = [
+  '/hero/hero-1.png',
+  '/hero/hero-2.png',
+  '/hero/hero-3.png',
+  '/hero/hero-4.png',
+]
+
 function getCategoryEmoji(category: string) {
   const cat = (category || '').toLowerCase()
   if (cat.includes('biryani')) return '🍛'
@@ -170,6 +180,9 @@ export default function MenuPage() {
   const [loading, setLoading] = useState(true)
   const [restaurantSettings, setRestaurantSettings] = useState<RestaurantSettings | null>(null)
 
+  const [heroImages, setHeroImages] = useState<string[]>(HERO_IMAGES)
+  const [heroIndex, setHeroIndex] = useState(0)
+
   const [selectedItem, setSelectedItem] = useState<Product | null>(null)
   const [quantity, setQuantity] = useState(1)
   const [selectedToppings, setSelectedToppings] = useState<string[]>([])
@@ -178,10 +191,29 @@ export default function MenuPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    supabase.from('products').select('*').order('created_at').then(({ data }) => {
-      if (data) setMENU(data.filter(d => d.is_available))
+    let cancelled = false
+
+    async function loadProducts(attempt = 0) {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id,name,description,price,photo_url,is_available,is_veg,category,created_at,variants')
+        .eq('is_available', true)
+        .order('created_at', { ascending: true })
+
+      if (cancelled) return
+
+      // Retry once on a transient failure (e.g. free-tier cold-start statement timeout)
+      if (error && attempt === 0) {
+        setTimeout(() => { if (!cancelled) loadProducts(1) }, 1500)
+        return
+      }
+
+      if (data) setMENU(data)
       setLoading(false)
-    })
+    }
+
+    loadProducts()
+    return () => { cancelled = true }
   }, [supabase])
 
   // Fetch restaurant open/close status and subscribe to realtime changes
@@ -200,6 +232,29 @@ export default function MenuPage() {
   }, [supabase])
 
   const effectivelyOpen = useMemo(() => computeIsOpen(restaurantSettings), [restaurantSettings])
+
+  // Load admin-managed hero images; fall back to the bundled defaults
+  useEffect(() => {
+    supabase
+      .from('hero_images')
+      .select('image_url')
+      .order('sort_order', { ascending: true })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setHeroImages(data.map((r) => r.image_url))
+          setHeroIndex(0)
+        }
+      })
+  }, [supabase])
+
+  // Auto-rotate the hero banner images every 4 seconds
+  useEffect(() => {
+    if (heroImages.length <= 1) return
+    const id = setInterval(() => {
+      setHeroIndex((i) => (i + 1) % heroImages.length)
+    }, 4000)
+    return () => clearInterval(id)
+  }, [heroImages.length])
 
   function getCategoryCount(cat: string): number {
     if (cat === 'Popular') return MENU.filter(i => i.name.toLowerCase().includes('butter chicken') || i.name.toLowerCase() === 'chicken biryani').length
@@ -367,14 +422,17 @@ export default function MenuPage() {
 
       <main className="phone-screen pb-40">
 
-        {/* ── Hero Banner ── */}
+        {/* ── Hero Banner (auto-rotating slideshow) ── */}
         <div className="relative h-52 overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/chicken-biryani.png"
-            alt="Authentic Awadhi Flavors"
-            className="w-full h-full object-cover"
-          />
+          {heroImages.map((src, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={src}
+              src={src}
+              alt="Authentic Awadhi Flavors"
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${i === heroIndex ? 'opacity-100' : 'opacity-0'}`}
+            />
+          ))}
           <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-transparent" />
           <div className="absolute inset-0 flex flex-col justify-end px-5 pb-5 text-white">
             <span className="inline-flex items-center gap-1 bg-[#c0392b] text-white text-[9px] font-bold px-2 py-0.5 rounded-md mb-2 w-fit tracking-widest uppercase">
@@ -383,6 +441,15 @@ export default function MenuPage() {
             <h2 className="text-xl font-extrabold leading-tight drop-shadow-md">
               Authentic Awadhi<br />Flavors
             </h2>
+          </div>
+          {/* Slide indicator dots */}
+          <div className="absolute bottom-3 right-4 flex gap-1.5">
+            {heroImages.map((src, i) => (
+              <span
+                key={src}
+                className={`h-1.5 rounded-full transition-all duration-300 ${i === heroIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50'}`}
+              />
+            ))}
           </div>
         </div>
 
