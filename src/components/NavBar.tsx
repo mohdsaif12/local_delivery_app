@@ -13,6 +13,8 @@ interface Props {
   onSearchClick?: () => void
   isOpen?: boolean
   openingTime?: string
+  /** Why we're closed: 'manual' = staff switched off, 'hours' = outside opening times */
+  closedReason?: 'manual' | 'hours' | null
 }
 
 function formatTime12(timeStr?: string): string {
@@ -23,7 +25,7 @@ function formatTime12(timeStr?: string): string {
   return `${hour12}:${String(m || 0).padStart(2, '0')} ${period}`
 }
 
-export default function NavBar({ role, title, showBack, onSearchClick, isOpen, openingTime }: Props) {
+export default function NavBar({ role, title, showBack, onSearchClick, isOpen, openingTime, closedReason }: Props) {
   const router = useRouter()
   const itemCount = useCartStore((s) => s.items.reduce((sum, i) => sum + i.quantity, 0))
 
@@ -77,8 +79,12 @@ export default function NavBar({ role, title, showBack, onSearchClick, isOpen, o
             </h1>
             {!showBack && (
               <p className="text-[11px] text-gray-400 font-medium flex items-center gap-1 mt-0.5">
-                <span className={`inline-block w-1.5 h-1.5 rounded-full ${isOpen === false ? 'bg-red-500' : 'bg-green-500'}`} />
-                {isOpen === false
+                <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                  closedReason === 'manual' ? 'bg-amber-500' : isOpen === false ? 'bg-red-500' : 'bg-green-500'
+                }`} />
+                {closedReason === 'manual'
+                  ? 'Temporarily closed · Back in 1–2 hrs'
+                  : isOpen === false
                   ? openingTime ? `Closed · Opens at ${formatTime12(openingTime)}` : 'Closed'
                   : 'Open • 25–35 mins • 0.6 km'}
               </p>

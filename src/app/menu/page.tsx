@@ -26,16 +26,44 @@ function formatTime12(t?: string): string {
   return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
 
-function computeIsOpen(s: RestaurantSettings | null): boolean {
-  if (!s) return true
-  return s.is_open
+// Why the restaurant isn't taking orders:
+//   'manual' — staff flipped the switch off in the dashboard
+//   'hours'  — outside the configured opening/closing times
+//   null     — open
+type ClosedReason = 'manual' | 'hours' | null
+
+function toMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + (m || 0)
+}
+
+function isWithinHours(s: RestaurantSettings, now: Date): boolean {
+  if (!s.opening_time || !s.closing_time) return true
+  const mins = now.getHours() * 60 + now.getMinutes()
+  const open = toMinutes(s.opening_time)
+  const close = toMinutes(s.closing_time)
+  // Overnight window (e.g. 18:00 → 02:00) wraps past midnight
+  return close > open ? mins >= open && mins < close : mins >= open || mins < close
+}
+
+// Nothing in the database closes the shop on a schedule (the only cron job
+// re-enables individual dishes), so the app enforces the opening hours itself.
+// Order matters: the clock wins, then the manual switch.
+function getClosedReason(s: RestaurantSettings | null, now: Date): ClosedReason {
+  if (!s) return null                          // settings not loaded — assume open
+  if (!isWithinHours(s, now)) return 'hours'   // outside opening hours
+  if (!s.is_open) return 'manual'              // inside hours, but switched off
+  return null
 }
 
 const CATEGORIES = ['Popular', 'Biryani', 'Fry', 'Gravy', 'Kebabs', 'Tandoor', 'Breads', 'Dessert']
 
-// Images that auto-rotate on the hero banner.
-// To change them yourself: replace the files in  public/hero/  keeping the
-// same names (hero-1.png … hero-4.png). To add/remove slides, edit this list.
+// Hero banner photos are read from Supabase Storage at runtime — upload to
+// this bucket/folder and they appear in the slideshow automatically.
+const HERO_BUCKET = 'menu-photos'
+const HERO_FOLDER = 'dishes/hero section photos'
+
+// Shown only if the Storage folder is empty or unreachable.
 const HERO_IMAGES = [
   '/hero/hero-1.png',
   '/hero/hero-2.png',
@@ -231,17 +259,33 @@ export default function MenuPage() {
     return () => { supabase.removeChannel(ch) }
   }, [supabase])
 
-  const effectivelyOpen = useMemo(() => computeIsOpen(restaurantSettings), [restaurantSettings])
-
-  // Load admin-managed hero images; fall back to the bundled defaults
+  // Re-check the clock every minute so the banner flips at opening/closing
+  // time without the customer needing to refresh.
+  const [now, setNow] = useState(() => new Date())
   useEffect(() => {
-    supabase
-      .from('hero_images')
-      .select('image_url')
-      .order('sort_order', { ascending: true })
+    const id = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  const closedReason = useMemo(() => getClosedReason(restaurantSettings, now), [restaurantSettings, now])
+  const effectivelyOpen = closedReason === null
+
+  // Load hero images from the Storage folder; fall back to bundled defaults.
+  // Drop new photos into that folder and they show up here automatically.
+  useEffect(() => {
+    supabase.storage
+      .from(HERO_BUCKET)
+      .list(HERO_FOLDER, { limit: 100, sortBy: { column: 'name', order: 'asc' } })
       .then(({ data }) => {
-        if (data && data.length > 0) {
-          setHeroImages(data.map((r) => r.image_url))
+        if (!data) return
+        const urls = data
+          .filter((o) => o.id && /\.(jpe?g|png|webp|avif)$/i.test(o.name))
+          .map(
+            (o) =>
+              supabase.storage.from(HERO_BUCKET).getPublicUrl(`${HERO_FOLDER}/${o.name}`).data.publicUrl
+          )
+        if (urls.length > 0) {
+          setHeroImages(urls)
           setHeroIndex(0)
         }
       })
@@ -391,17 +435,21 @@ export default function MenuPage() {
         }
       ` }} />
 
-      <NavBar role="customer" onSearchClick={openSearch} isOpen={effectivelyOpen} openingTime={restaurantSettings?.opening_time} />
+      <NavBar role="customer" onSearchClick={openSearch} isOpen={effectivelyOpen} openingTime={restaurantSettings?.opening_time} closedReason={closedReason} />
       <PushSetup />
       <IOSInstallPrompt variant="menu" />
 
-      {/* Closed banner */}
-      {!effectivelyOpen && (
+      {/* Closed banner — wording depends on why we're closed */}
+      {closedReason === 'manual' ? (
+        <div className="bg-amber-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-14 z-40">
+          🔴 Temporarily Closed · Back in 1–2 hrs
+        </div>
+      ) : closedReason === 'hours' ? (
         <div className="bg-red-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-14 z-40">
           🔴 We&apos;re Closed
           {restaurantSettings?.opening_time && ` · Opens at ${formatTime12(restaurantSettings.opening_time)}`}
         </div>
-      )}
+      ) : null}
 
       {/* Search bar */}
       {searchOpen && (
@@ -424,15 +472,22 @@ export default function MenuPage() {
 
         {/* ── Hero Banner (auto-rotating slideshow) ── */}
         <div className="relative h-52 overflow-hidden">
-          {heroImages.map((src, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={src}
-              src={src}
-              alt="Authentic Awadhi Flavors"
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${i === heroIndex ? 'opacity-100' : 'opacity-0'}`}
-            />
-          ))}
+          {heroImages.map((src, i) => {
+            // Only mount the visible slide and the one after it, so we never
+            // download every photo in the folder up front.
+            const isActive = i === heroIndex
+            const isNext = i === (heroIndex + 1) % heroImages.length
+            if (!isActive && !isNext) return null
+            return (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={src}
+                src={src}
+                alt="Authentic Awadhi Flavors"
+                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${isActive ? 'opacity-100' : 'opacity-0'}`}
+              />
+            )
+          })}
           <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-transparent" />
           <div className="absolute inset-0 flex flex-col justify-end px-5 pb-5 text-white">
             <span className="inline-flex items-center gap-1 bg-[#c0392b] text-white text-[9px] font-bold px-2 py-0.5 rounded-md mb-2 w-fit tracking-widest uppercase">
