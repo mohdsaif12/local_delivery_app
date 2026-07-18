@@ -17,6 +17,8 @@ interface RestaurantSettings {
   is_open: boolean
   opening_time: string
   closing_time: string
+  /** Staff-chosen reason, set by the dashboard on a manual close. Null when open. */
+  closed_reason: string | null
 }
 
 
@@ -56,7 +58,24 @@ function getClosedReason(s: RestaurantSettings | null, now: Date): ClosedReason 
   return null
 }
 
-const CATEGORIES = ['Popular', 'Biryani', 'Fry', 'Gravy', 'Kebabs', 'Tandoor', 'Breads', 'Dessert']
+// Mirrors the dashboard's menu categories, in the same order.
+// `label` is the display name customers see; `slug` is what's stored on
+// products.category — the two differ (e.g. "Roasted" is stored as "tandoor").
+const CATEGORIES: { label: string; slug: string }[] = [
+  { label: 'Popular',        slug: 'popular' },
+  { label: 'All',            slug: 'all' },
+  { label: 'Biryani & Rice', slug: 'biryani' },
+  { label: 'Fried',          slug: 'fry' },
+  { label: 'Kebabs',         slug: 'kebabs' },
+  { label: 'Roasted',        slug: 'tandoor' },
+  { label: 'Gravies',        slug: 'gravy' },
+  { label: 'Breads',         slug: 'breads' },
+  { label: 'Dessert',        slug: 'dessert' },
+  { label: 'Veg',            slug: 'veg' },
+  { label: 'Combos',         slug: 'combos' },
+  { label: 'Combo',          slug: 'combo' },
+  { label: 'Others',         slug: 'other' },
+]
 
 // Hero banner photos are read from Supabase Storage at runtime — upload to
 // this bucket/folder and they appear in the slideshow automatically.
@@ -81,6 +100,7 @@ function getCategoryEmoji(category: string) {
   if (cat.includes('tandoor')) return '🔥'
   if (cat.includes('dessert')) return '🍧'
   if (cat.includes('combo')) return '🍱'
+  if (cat.includes('veg')) return '🥗'
   return '🍽'
 }
 
@@ -199,7 +219,7 @@ function MenuItemCard({ item, onClick, restaurantOpen }: MenuItemCardProps) {
 }
 
 export default function MenuPage() {
-  const [activeCategory, setActiveCategory] = useState('Popular')
+  const [activeCategory, setActiveCategory] = useState('popular')
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -246,7 +266,7 @@ export default function MenuPage() {
 
   // Fetch restaurant open/close status and subscribe to realtime changes
   useEffect(() => {
-    supabase.from('restaurants').select('id, is_open, opening_time, closing_time').limit(1).single()
+    supabase.from('restaurants').select('id, is_open, opening_time, closing_time, closed_reason').limit(1).single()
       .then(({ data }) => { if (data) setRestaurantSettings(data) })
 
     const ch = supabase.channel('restaurant-open-status')
@@ -270,25 +290,48 @@ export default function MenuPage() {
   const closedReason = useMemo(() => getClosedReason(restaurantSettings, now), [restaurantSettings, now])
   const effectivelyOpen = closedReason === null
 
-  // Load hero images from the Storage folder; fall back to bundled defaults.
-  // Drop new photos into that folder and they show up here automatically.
+  // Hero images, in priority order:
+  //   1. Banners uploaded from the dashboard's Banners page
+  //   2. Photos dropped straight into the Storage folder
+  //   3. The bundled defaults already in state
+  // So uploading banners swaps the hero; uploading none keeps what's there.
   useEffect(() => {
-    supabase.storage
-      .from(HERO_BUCKET)
-      .list(HERO_FOLDER, { limit: 100, sortBy: { column: 'name', order: 'asc' } })
-      .then(({ data }) => {
-        if (!data) return
-        const urls = data
-          .filter((o) => o.id && /\.(jpe?g|png|webp|avif)$/i.test(o.name))
-          .map(
-            (o) =>
-              supabase.storage.from(HERO_BUCKET).getPublicUrl(`${HERO_FOLDER}/${o.name}`).data.publicUrl
-          )
-        if (urls.length > 0) {
-          setHeroImages(urls)
-          setHeroIndex(0)
-        }
-      })
+    let cancelled = false
+
+    async function loadHeroImages() {
+      const { data: banners } = await supabase
+        .from('banners')
+        .select('image_url')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+      if (cancelled) return
+
+      const bannerUrls = (banners ?? []).map((b) => b.image_url).filter(Boolean)
+      if (bannerUrls.length > 0) {
+        setHeroImages(bannerUrls)
+        setHeroIndex(0)
+        return
+      }
+
+      const { data: files } = await supabase.storage
+        .from(HERO_BUCKET)
+        .list(HERO_FOLDER, { limit: 100, sortBy: { column: 'name', order: 'asc' } })
+      if (cancelled || !files) return
+
+      const urls = files
+        .filter((o) => o.id && /\.(jpe?g|png|webp|avif)$/i.test(o.name))
+        .map(
+          (o) =>
+            supabase.storage.from(HERO_BUCKET).getPublicUrl(`${HERO_FOLDER}/${o.name}`).data.publicUrl
+        )
+      if (urls.length > 0) {
+        setHeroImages(urls)
+        setHeroIndex(0)
+      }
+    }
+
+    loadHeroImages()
+    return () => { cancelled = true }
   }, [supabase])
 
   // Auto-rotate the hero banner images every 4 seconds
@@ -300,16 +343,29 @@ export default function MenuPage() {
     return () => clearInterval(id)
   }, [heroImages.length])
 
-  function getCategoryCount(cat: string): number {
-    if (cat === 'Popular') return MENU.filter(i => i.name.toLowerCase().includes('butter chicken') || i.name.toLowerCase() === 'chicken biryani').length
-    return MENU.filter(i => (i.category || '').toLowerCase() === cat.toLowerCase()).length
-  }
-
+  // Curated groups shown on the Popular tab
   const SECTIONS = [
     { title: 'Popular Choice', filter: (i: Product) => i.name.toLowerCase().includes('butter chicken') || i.name.toLowerCase() === 'chicken biryani' },
     { title: 'From the Clay Oven', filter: (i: Product) => (i.category || '').toLowerCase() === 'kebabs' || (i.category || '').toLowerCase() === 'tandoor' },
     { title: 'Biryani & Gravy', filter: (i: Product) => (i.category || '').toLowerCase() === 'biryani' || (i.category || '').toLowerCase() === 'gravy' },
   ]
+
+  function getCategoryCount(slug: string): number {
+    if (slug === 'all') return MENU.length
+    // A dish can appear in more than one section, so count distinct items
+    if (slug === 'popular') {
+      return new Set(
+        SECTIONS.flatMap((s) => MENU.filter(s.filter).map((i) => i.id))
+      ).size
+    }
+    return MENU.filter(i => (i.category || '').toLowerCase() === slug).length
+  }
+
+  // Hide tabs with nothing in them — the customer app only lists available
+  // dishes, so a category can be non-empty in the dashboard but empty here.
+  const visibleCategories = CATEGORIES.filter(
+    (c) => c.slug === 'all' || getCategoryCount(c.slug) > 0
+  )
 
   // Horizontal scroll grab-and-drag states
   const [isDown, setIsDown] = useState(false)
@@ -349,11 +405,12 @@ export default function MenuPage() {
   const q = searchQuery.trim().toLowerCase()
   const filteredItems = q
     ? MENU.filter(i => i.name.toLowerCase().includes(q) || (i.description || '').toLowerCase().includes(q))
-    : activeCategory === 'Popular'
+    : activeCategory === 'all'
     ? MENU
-    : MENU.filter(i => (i.category || '').toLowerCase() === activeCategory.toLowerCase())
+    : MENU.filter(i => (i.category || '').toLowerCase() === activeCategory)
 
-  const sectionsToShow = (!q && activeCategory === 'Popular') ? SECTIONS : null
+  // The Popular tab shows curated sections instead of a flat list
+  const sectionsToShow = (!q && activeCategory === 'popular') ? SECTIONS : null
 
   function openSearch() {
     setSearchOpen(true)
@@ -442,7 +499,7 @@ export default function MenuPage() {
       {/* Closed banner — wording depends on why we're closed */}
       {closedReason === 'manual' ? (
         <div className="bg-amber-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-14 z-40">
-          🔴 Temporarily Closed · Back in 1–2 hrs
+          🔴 {restaurantSettings?.closed_reason || 'Temporarily Closed · Back in 1–2 hrs'}
         </div>
       ) : closedReason === 'hours' ? (
         <div className="bg-red-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-14 z-40">
@@ -519,17 +576,17 @@ export default function MenuPage() {
             style={{ WebkitOverflowScrolling: 'touch' }}
             className="flex gap-1 overflow-x-auto no-scrollbar px-4 py-3 cursor-grab active:cursor-grabbing select-none"
           >
-            {CATEGORIES.map((cat) => (
+            {visibleCategories.map((cat) => (
               <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
+                key={cat.slug}
+                onClick={() => setActiveCategory(cat.slug)}
                 className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
-                  activeCategory === cat
+                  activeCategory === cat.slug
                     ? 'bg-[#c0392b] text-[#ffffff] shadow-md shadow-[#c0392b]/20'
                     : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                 }`}
               >
-                {cat} ({getCategoryCount(cat)})
+                {cat.label} ({getCategoryCount(cat.slug)})
               </button>
             ))}
           </div>
