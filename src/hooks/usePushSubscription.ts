@@ -48,24 +48,40 @@ export async function subscribeAfterPermission(): Promise<string> {
   return 'ok'
 }
 
-export function usePushPermissionState(): 'prompt' | 'granted' | 'unsupported' {
-  const [state, setState] = useState<'prompt' | 'granted' | 'unsupported'>('unsupported')
+export type PushState = 'prompt' | 'granted' | 'denied' | 'unsupported' | 'in-app-browser' | 'insecure'
+
+// Android in-app webviews (WhatsApp/Instagram/Facebook/etc.) can't do web push.
+export function isInAppBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  return /FBAN|FBAV|Instagram|Line\/|Twitter|WhatsApp|Snapchat|; wv\)|GSA\//i.test(ua)
+}
+
+function computePushState(): PushState {
+  // Push needs a secure context; the LAN dev URL over http is not one.
+  if (!window.isSecureContext) return 'insecure'
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    // Distinguish "your browser can't" from "this in-app browser can't"
+    return isInAppBrowser() ? 'in-app-browser' : 'unsupported'
+  }
+  // Notification.permission is the real signal, and it's synchronous —
+  // no fragile serviceWorker.ready race that could hang on Android.
+  const perm = Notification.permission
+  return perm === 'granted' ? 'granted' : perm === 'denied' ? 'denied' : 'prompt'
+}
+
+export function usePushPermissionState(): PushState {
+  // Start 'unsupported' so the server and first client render agree (this
+  // component renders nothing then), and compute the real state after mount.
+  const [state, setState] = useState<PushState>('unsupported')
 
   useEffect(() => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      setState('unsupported')
-      return
+    const next = computePushState()
+    if (next !== 'insecure' && next !== 'unsupported' && next !== 'in-app-browser') {
+      navigator.serviceWorker.register('/sw.js').catch(() => {})
     }
-    navigator.serviceWorker.register('/sw.js').catch(() => {})
-
-    const fallback = setTimeout(() => setState('prompt'), 4000)
-
-    navigator.serviceWorker.ready
-      .then((reg) => reg.pushManager.getSubscription())
-      .then((sub) => { clearTimeout(fallback); setState(sub ? 'granted' : 'prompt') })
-      .catch(() => { clearTimeout(fallback); setState('prompt') })
-
-    return () => clearTimeout(fallback)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setState(next)
   }, [])
 
   return state

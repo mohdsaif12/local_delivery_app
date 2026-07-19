@@ -230,6 +230,7 @@ export default function MenuPage() {
 
   const [heroImages, setHeroImages] = useState<string[]>(HERO_IMAGES)
   const [heroIndex, setHeroIndex] = useState(0)
+  const [heroPaused, setHeroPaused] = useState(false)
 
   const [selectedItem, setSelectedItem] = useState<Product | null>(null)
   const [quantity, setQuantity] = useState(1)
@@ -334,14 +335,37 @@ export default function MenuPage() {
     return () => { cancelled = true }
   }, [supabase])
 
-  // Auto-rotate the hero banner images every 4 seconds
+  // Auto-rotate the hero every 4s — unless the user is holding/swiping it
   useEffect(() => {
-    if (heroImages.length <= 1) return
+    if (heroImages.length <= 1 || heroPaused) return
     const id = setInterval(() => {
       setHeroIndex((i) => (i + 1) % heroImages.length)
     }, 4000)
     return () => clearInterval(id)
-  }, [heroImages.length])
+  }, [heroImages.length, heroPaused])
+
+  function goToHeroSlide(dir: 1 | -1) {
+    setHeroIndex((i) => (i + dir + heroImages.length) % heroImages.length)
+  }
+
+  // Touch/drag handling for the hero: press-and-hold pauses, a swipe moves
+  const heroDragX = useRef<number | null>(null)
+  function onHeroPointerDown(e: React.PointerEvent) {
+    heroDragX.current = e.clientX
+    setHeroPaused(true) // hold to stop on the current image
+  }
+  function onHeroPointerUp(e: React.PointerEvent) {
+    const start = heroDragX.current
+    heroDragX.current = null
+    setHeroPaused(false) // let go — auto slideshow resumes
+    if (start === null) return
+    const dx = e.clientX - start
+    if (Math.abs(dx) > 40) goToHeroSlide(dx < 0 ? 1 : -1) // swipe left = next
+  }
+  function onHeroPointerLeave() {
+    heroDragX.current = null
+    setHeroPaused(false)
+  }
 
   // Curated groups shown on the Popular tab
   const SECTIONS = [
@@ -528,19 +552,27 @@ export default function MenuPage() {
       <main className="phone-screen pb-40">
 
         {/* ── Hero Banner (auto-rotating slideshow) ── */}
-        <div className="relative h-52 overflow-hidden">
+        <div
+          className="relative h-52 overflow-hidden touch-pan-y select-none cursor-grab active:cursor-grabbing"
+          onPointerDown={onHeroPointerDown}
+          onPointerUp={onHeroPointerUp}
+          onPointerLeave={onHeroPointerLeave}
+          onPointerCancel={onHeroPointerLeave}
+        >
           {heroImages.map((src, i) => {
-            // Only mount the visible slide and the one after it, so we never
-            // download every photo in the folder up front.
+            // Only mount the visible slide plus its neighbours, so we never
+            // download the whole folder up front but can still swipe both ways.
             const isActive = i === heroIndex
             const isNext = i === (heroIndex + 1) % heroImages.length
-            if (!isActive && !isNext) return null
+            const isPrev = i === (heroIndex - 1 + heroImages.length) % heroImages.length
+            if (!isActive && !isNext && !isPrev) return null
             return (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 key={src}
                 src={src}
-                alt="Authentic Awadhi Flavors"
+                alt="Taste of Kanpur"
+                draggable={false}
                 className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${isActive ? 'opacity-100' : 'opacity-0'}`}
               />
             )
@@ -551,7 +583,7 @@ export default function MenuPage() {
               ★ Bestseller
             </span>
             <h2 className="text-xl font-extrabold leading-tight drop-shadow-md">
-              Authentic Awadhi<br />Flavors
+              Taste of<br />Kanpur
             </h2>
           </div>
           {/* Slide indicator dots */}
@@ -579,7 +611,11 @@ export default function MenuPage() {
             {visibleCategories.map((cat) => (
               <button
                 key={cat.slug}
-                onClick={() => setActiveCategory(cat.slug)}
+                onClick={(e) => {
+                  setActiveCategory(cat.slug)
+                  // Bring the tapped tab (and its neighbours) into view
+                  e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+                }}
                 className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
                   activeCategory === cat.slug
                     ? 'bg-[#c0392b] text-[#ffffff] shadow-md shadow-[#c0392b]/20'
