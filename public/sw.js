@@ -1,6 +1,18 @@
-// A (pass-through) fetch handler is part of Chrome's PWA install criteria,
-// so its presence lets Android offer "Install app".
-self.addEventListener('fetch', () => {})
+// Take over as soon as a new service worker is deployed, instead of waiting
+// for every tab to close — so updates apply on the next launch.
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))
+
+// Network-first for page navigations. Installed PWAs (especially on iOS) love
+// to serve a stale cached app shell on relaunch, which pins old code. Forcing
+// a fresh fetch of the HTML means new builds show up without reinstalling.
+// A pass-through fetch handler is also part of Chrome's PWA install criteria.
+self.addEventListener('fetch', (event) => {
+  const req = event.request
+  if (req.mode === 'navigate') {
+    event.respondWith(fetch(req, { cache: 'no-store' }).catch(() => fetch(req)))
+  }
+})
 
 self.addEventListener('push', (event) => {
   if (!event.data) return
