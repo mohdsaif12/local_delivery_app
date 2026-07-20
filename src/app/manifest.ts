@@ -10,8 +10,11 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: '#f8f9fa',
     theme_color: '#b51c00',
     icons: [
-      { src: '/apple-touch-icon.png', sizes: '820x1200', type: 'image/png' },
-      { src: '/logo.png', sizes: '1640x2400', type: 'image/png' },
+      // Square 192 + 512 are required for Android/Chrome to offer install
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   }
 }

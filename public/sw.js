@@ -1,3 +1,7 @@
+// A (pass-through) fetch handler is part of Chrome's PWA install criteria,
+// so its presence lets Android offer "Install app".
+self.addEventListener('fetch', () => {})
+
 self.addEventListener('push', (event) => {
   if (!event.data) return
   const data = event.data.json()

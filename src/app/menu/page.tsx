@@ -9,6 +9,7 @@ import BottomNav from '@/components/BottomNav'
 import CartBar from '@/components/CartBar'
 import PushSetup from '@/components/PushSetup'
 import IOSInstallPrompt from '@/components/IOSInstallPrompt'
+import AndroidInstallPrompt from '@/components/AndroidInstallPrompt'
 import { Product } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 
@@ -348,22 +349,27 @@ export default function MenuPage() {
     setHeroIndex((i) => (i + dir + heroImages.length) % heroImages.length)
   }
 
-  // Touch/drag handling for the hero: press-and-hold pauses, a swipe moves
-  const heroDragX = useRef<number | null>(null)
+  // Instagram-story controls: a quick tap on the right advances / left goes
+  // back; press-and-hold pauses on the current image and resumes on release.
+  const heroPress = useRef<{ t: number; x: number } | null>(null)
   function onHeroPointerDown(e: React.PointerEvent) {
-    heroDragX.current = e.clientX
-    setHeroPaused(true) // hold to stop on the current image
+    heroPress.current = { t: Date.now(), x: e.clientX }
+    setHeroPaused(true) // hold to stop
   }
   function onHeroPointerUp(e: React.PointerEvent) {
-    const start = heroDragX.current
-    heroDragX.current = null
-    setHeroPaused(false) // let go — auto slideshow resumes
-    if (start === null) return
-    const dx = e.clientX - start
-    if (Math.abs(dx) > 40) goToHeroSlide(dx < 0 ? 1 : -1) // swipe left = next
+    const start = heroPress.current
+    heroPress.current = null
+    setHeroPaused(false) // release resumes auto-rotation
+    if (!start) return
+    const heldMs = Date.now() - start.t
+    const movedX = Math.abs(e.clientX - start.x)
+    if (heldMs > 250 || movedX > 12) return // a hold or a scroll, not a tap
+    const rect = e.currentTarget.getBoundingClientRect()
+    const tappedLeftThird = e.clientX - rect.left < rect.width * 0.33
+    goToHeroSlide(tappedLeftThird ? -1 : 1)
   }
   function onHeroPointerLeave() {
-    heroDragX.current = null
+    heroPress.current = null
     setHeroPaused(false)
   }
 
@@ -519,6 +525,7 @@ export default function MenuPage() {
       <NavBar role="customer" onSearchClick={openSearch} isOpen={effectivelyOpen} openingTime={restaurantSettings?.opening_time} closedReason={closedReason} />
       <PushSetup />
       <IOSInstallPrompt variant="menu" />
+      <AndroidInstallPrompt />
 
       {/* Closed banner — wording depends on why we're closed */}
       {closedReason === 'manual' ? (
@@ -553,7 +560,7 @@ export default function MenuPage() {
 
         {/* ── Hero Banner (auto-rotating slideshow) ── */}
         <div
-          className="relative h-52 overflow-hidden touch-pan-y select-none cursor-grab active:cursor-grabbing"
+          className="relative h-52 overflow-hidden touch-pan-y select-none cursor-pointer"
           onPointerDown={onHeroPointerDown}
           onPointerUp={onHeroPointerUp}
           onPointerLeave={onHeroPointerLeave}
