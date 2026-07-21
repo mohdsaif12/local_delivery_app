@@ -17,18 +17,24 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('push', (event) => {
   if (!event.data) return
   const data = event.data.json()
+  // Use unique tag timestamp so Android treats each update as a new Heads-Up popup banner
+  const uniqueTag = data.tag ? `${data.tag}-${Date.now()}` : `order-${Date.now()}`
+
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
       icon: '/logo.png',
       badge: '/logo.png',
-      tag: data.tag ?? 'order-update',
-      vibrate: [300, 100, 300, 100, 400], // Vibration pattern triggers Android Heads-Up popup & sound
-      renotify: true,                      // Force Android to re-alert (sound + pop-up) even if previous notification with same tag is showing
-      requireInteraction: true,           // Keeps notification visible on screen until user interacts
+      tag: uniqueTag,
+      vibrate: [500, 150, 500, 150, 500], // Strong vibration pattern required for Android Heads-Up alert
+      renotify: true,                      // Force sound + pop-up banner on screen
+      requireInteraction: true,           // Banner stays on screen until tapped
       silent: false,
       timestamp: Date.now(),
       data: { url: data.url ?? '/' },
+      actions: [
+        { action: 'open', title: '📱 View Order' }
+      ]
     })
   )
 })
