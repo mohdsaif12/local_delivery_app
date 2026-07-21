@@ -1,48 +1,94 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { User, Mail, Phone, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
+import { User, Phone, KeyRound, ArrowRight, RefreshCw, CheckCircle2 } from 'lucide-react'
 
 export default function SignupPage() {
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
+  const [otp, setOtp] = useState('')
+  const [step, setStep] = useState<'details' | 'otp'>('details')
   const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [resendCountdown, setResendCountdown] = useState(0)
   const [showSplash, setShowSplash] = useState(false)
   const router = useRouter()
 
-  async function handleSignup(e: React.SyntheticEvent) {
+  useEffect(() => {
+    if (resendCountdown <= 0) return
+    const timer = setInterval(() => setResendCountdown((c) => c - 1), 1000)
+    return () => clearInterval(timer)
+  }, [resendCountdown])
+
+  const cleanPhone = phone.replace(/\D/g, '')
+
+  async function handleSendOtp(e: React.SyntheticEvent) {
     e.preventDefault()
     if (!agreed) { toast.error('Please agree to the Terms & Conditions'); return }
+    if (cleanPhone.length < 10) { toast.error('Please enter a valid 10-digit mobile number'); return }
+
     setLoading(true)
     const supabase = createClient()
+    const fullPhone = `+91${cleanPhone.slice(-10)}`
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { role: 'customer', full_name: name, phone } },
+    const { error } = await supabase.auth.signInWithOtp({
+      phone: fullPhone,
+      options: {
+        data: {
+          full_name: name,
+          phone: cleanPhone.slice(-10),
+          role: 'customer',
+        },
+      },
     })
+
+    setLoading(false)
+
     if (error) {
       toast.error(error.message)
+      return
+    }
+
+    toast.success(`OTP sent to +91 ${cleanPhone.slice(-10)}`)
+    setStep('otp')
+    setResendCountdown(30)
+  }
+
+  async function handleVerifyOtp(e: React.SyntheticEvent) {
+    e.preventDefault()
+    if (otp.length < 6) { toast.error('Please enter the full 6-digit OTP'); return }
+
+    setLoading(true)
+    const supabase = createClient()
+    const fullPhone = `+91${cleanPhone.slice(-10)}`
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone: fullPhone,
+      token: otp.trim(),
+      type: 'sms',
+    })
+
+    if (error) {
+      toast.error(error.message || 'Invalid OTP code')
       setLoading(false)
       return
     }
 
-    const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
-    if (signInErr) {
-      toast.success('Account created! Please check your email to confirm.')
-      router.push('/login')
-      return
+    // Upsert profile record with customer's full_name
+    if (data.user) {
+      await supabase.from('profiles').upsert({
+        id: data.user.id,
+        full_name: name,
+        phone: cleanPhone.slice(-10),
+        role: 'customer',
+      })
     }
 
-    toast.success('Welcome to Wali Baba Foods!')
+    toast.success('Account created successfully!')
     setShowSplash(true)
     setLoading(false)
 
@@ -58,7 +104,6 @@ export default function SignupPage() {
         className="min-h-[100dvh] phone-screen flex flex-col items-center justify-center relative overflow-hidden"
         style={{ background: 'linear-gradient(170deg, #ffffff 0%, #fff8f7 40%, #fff3f0 100%)' }}
       >
-        {/* Floating food icons for premium touch */}
         <div className="absolute inset-0 pointer-events-none select-none overflow-hidden" aria-hidden>
           <span className="absolute top-1/4 left-1/4 text-4xl opacity-15 animate-bounce" style={{ animationDelay: '0.2s' }}>🍛</span>
           <span className="absolute top-1/3 right-1/4 text-4xl opacity-15 animate-bounce" style={{ animationDelay: '0.5s' }}>🍗</span>
@@ -66,17 +111,10 @@ export default function SignupPage() {
           <span className="absolute bottom-1/4 right-1/3 text-4xl opacity-15 animate-bounce" style={{ animationDelay: '1.1s' }}>🍧</span>
         </div>
 
-        {/* Center Logo Container */}
         <div className="flex flex-col items-center justify-center z-10 animate-in fade-in zoom-in-95 duration-500">
-          <div 
-            className="w-36 h-36 rounded-full bg-white flex items-center justify-center mb-6 shadow-xl shadow-red-100/50 border border-red-50/50"
-          >
+          <div className="w-36 h-36 rounded-full bg-white flex items-center justify-center mb-6 shadow-xl shadow-red-100/50 border border-red-50/50">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.png"
-              alt="Wali Baba Foods"
-              className="w-24 h-24 object-contain animate-pulse"
-            />
+            <img src="/logo.png" alt="Wali Baba Foods" className="w-24 h-24 object-contain animate-pulse" />
           </div>
 
           <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Wali Baba Foods</h2>
@@ -84,7 +122,6 @@ export default function SignupPage() {
             The Royal Taste of Tradition
           </p>
 
-          {/* Personalized Greeting */}
           <div className="mt-8 bg-red-50/80 px-4 py-2 rounded-2xl border border-red-100/30 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-[#c0392b] animate-ping" />
             <span className="text-[11px] font-extrabold text-[#c0392b]">
@@ -93,7 +130,7 @@ export default function SignupPage() {
           </div>
 
           <p className="text-[10px] text-gray-400 mt-3 font-semibold">
-            Preparing your royal kitchen dashboard...
+            Setting up your address profile...
           </p>
         </div>
       </div>
@@ -104,173 +141,153 @@ export default function SignupPage() {
     <div className="min-h-[100dvh] phone-screen flex flex-col bg-white">
 
       {/* ── Hero: food photo with brand overlay ── */}
-      <div className="relative h-56 flex-shrink-0 overflow-hidden">
-        {/* Background food image via CSS gradient + emoji fallback */}
+      <div className="relative h-52 flex-shrink-0 overflow-hidden">
         <div
           className="absolute inset-0 bg-cover bg-center"
           style={{
             backgroundImage: `url('https://images.unsplash.com/photo-1631515243349-e0cb75fb8d3a?w=600&q=80')`,
           }}
         />
-        {/* Dark scrim */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-
-        {/* Brand logo over the image */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo.png"
-            alt="Wali Baba Foods"
-            className="w-24 h-24 object-contain drop-shadow-2xl"
-          />
+          <img src="/logo.png" alt="Wali Baba Foods" className="w-24 h-24 object-contain drop-shadow-2xl" />
         </div>
       </div>
 
-      {/* ── White form card overlapping hero ── */}
+      {/* ── White form card ── */}
       <div className="flex-1 bg-white rounded-t-3xl -mt-5 relative z-10 px-6 pt-6 pb-10 shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
 
         <div className="mb-6">
           <h2 className="text-xl font-bold text-gray-900">Create Account</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Join the circle of authentic flavors.</p>
+          <p className="text-sm text-gray-400 mt-0.5">
+            {step === 'details' ? 'Join the circle of authentic flavors.' : `Enter the 6-digit OTP sent to +91 ${cleanPhone.slice(-10)}`}
+          </p>
         </div>
 
-        <form onSubmit={handleSignup} className="space-y-5">
-
-          {/* Full Name */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 tracking-wide">Full Name</label>
-            <div className="relative flex items-center border-b border-gray-200 pb-2 focus-within:border-[#c0392b] transition-colors">
-              <User className="size-4 text-gray-300 mr-3 flex-shrink-0" />
-              <input
-                type="text"
-                placeholder="John Doe"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none"
-              />
+        {step === 'details' ? (
+          <form onSubmit={handleSendOtp} className="space-y-5">
+            {/* Full Name */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 tracking-wide">Full Name</label>
+              <div className="relative flex items-center border-b border-gray-200 pb-2 focus-within:border-[#c0392b] transition-colors">
+                <User className="size-4 text-gray-300 mr-3 flex-shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Enter your full name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none"
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Email */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 tracking-wide">Email Address</label>
-            <div className="relative flex items-center border-b border-gray-200 pb-2 focus-within:border-[#c0392b] transition-colors">
-              <Mail className="size-4 text-gray-300 mr-3 flex-shrink-0" />
-              <input
-                type="email"
-                placeholder="john@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none"
-              />
+            {/* Mobile Number */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 tracking-wide">Mobile Number</label>
+              <div className="relative flex items-center border-b border-gray-200 pb-2 focus-within:border-[#c0392b] transition-colors">
+                <Phone className="size-4 text-gray-300 mr-3 flex-shrink-0" />
+                <span className="text-sm font-bold text-gray-700 mr-2">+91</span>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  placeholder="98765 43210"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  required
+                  className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none font-medium tracking-wide"
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Phone */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 tracking-wide">Phone Number</label>
-            <div className="relative flex items-center border-b border-gray-200 pb-2 focus-within:border-[#c0392b] transition-colors">
-              <Phone className="size-4 text-gray-300 mr-3 flex-shrink-0" />
+            {/* Terms */}
+            <label className="flex items-start gap-3 cursor-pointer pt-1">
               <input
-                type="tel"
-                placeholder="+91 98765 43210"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none"
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded accent-[#c0392b] flex-shrink-0"
               />
+              <span className="text-xs text-gray-400 leading-relaxed">
+                I agree to the <span className="text-[#c0392b] font-semibold">Terms &amp; Conditions</span> and <span className="text-[#c0392b] font-semibold">Privacy Policy</span>
+              </span>
+            </label>
+
+            {/* Send OTP CTA */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full h-13 bg-[#c0392b] hover:bg-[#a93226] text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 mt-2 active:scale-[0.98] transition-all disabled:opacity-60 shadow-md shadow-[#c0392b]/30 cursor-pointer"
+            >
+              <span>{loading ? 'Sending OTP…' : 'Send OTP'}</span>
+              {!loading && <ArrowRight className="size-4" />}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleVerifyOtp} className="space-y-5">
+            {/* OTP Input */}
+            <div>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className="block text-xs font-semibold text-gray-500 tracking-wide">6-Digit OTP</label>
+                <button
+                  type="button"
+                  onClick={() => setStep('details')}
+                  className="text-xs font-bold text-[#c0392b] hover:underline"
+                >
+                  Change Number
+                </button>
+              </div>
+              <div className="relative flex items-center border-b-2 border-[#c0392b] pb-2">
+                <KeyRound className="size-5 text-[#c0392b] mr-3 flex-shrink-0" />
+                <input
+                  type="text"
+                  maxLength={6}
+                  placeholder="••••••"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                  required
+                  autoFocus
+                  className="flex-1 bg-transparent text-2xl font-extrabold tracking-[0.4em] text-gray-900 placeholder:text-gray-300 outline-none text-center"
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Password */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 tracking-wide">Password</label>
-            <div className="relative flex items-center border-b border-gray-200 pb-2 focus-within:border-[#c0392b] transition-colors">
-              <Lock className="size-4 text-gray-300 mr-3 flex-shrink-0" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none"
-              />
+            {/* Resend button */}
+            <div className="flex justify-between items-center pt-1">
+              <span className="text-xs text-gray-400">Didn&apos;t receive SMS?</span>
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="text-gray-300 hover:text-gray-500 transition-colors ml-2"
+                disabled={resendCountdown > 0 || loading}
+                onClick={handleSendOtp}
+                className="text-xs font-bold text-[#c0392b] disabled:opacity-40 flex items-center gap-1"
               >
-                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                <RefreshCw className={`size-3 ${loading ? 'animate-spin' : ''}`} />
+                {resendCountdown > 0 ? `Resend in ${resendCountdown}s` : 'Resend OTP'}
               </button>
             </div>
-          </div>
 
-          {/* Terms */}
-          <label className="flex items-start gap-3 cursor-pointer pt-1">
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded accent-[#c0392b] flex-shrink-0"
-            />
-            <span className="text-xs text-gray-400 leading-relaxed">
-              I agree to the{' '}
-              <span className="text-[#c0392b] font-semibold">Terms &amp; Conditions</span>
-              {' '}and{' '}
-              <span className="text-[#c0392b] font-semibold">Privacy Policy</span>
-            </span>
-          </label>
+            {/* Verify CTA */}
+            <button
+              type="submit"
+              disabled={loading || otp.length < 6}
+              className="w-full h-13 bg-[#c0392b] hover:bg-[#a93226] text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 mt-2 active:scale-[0.98] transition-all disabled:opacity-60 shadow-md shadow-[#c0392b]/30 cursor-pointer"
+            >
+              <span>{loading ? 'Verifying…' : 'Verify OTP & Create Account'}</span>
+              {!loading && <CheckCircle2 className="size-4" />}
+            </button>
+          </form>
+        )}
 
-          {/* CTA */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full h-13 bg-[#c0392b] hover:bg-[#a93226] text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 mt-2 active:scale-[0.98] transition-all disabled:opacity-60 shadow-md shadow-[#c0392b]/30 cursor-pointer"
-          >
-            <span>{loading ? 'Creating account…' : 'Sign Up'}</span>
-            {!loading && <ArrowRight className="size-4" />}
-          </button>
-        </form>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3 my-6">
-          <div className="flex-1 h-px bg-gray-100" />
-          <span className="text-[10px] font-semibold text-gray-300 tracking-widest">OR CONTINUE WITH</span>
-          <div className="flex-1 h-px bg-gray-100" />
-        </div>
-
-        {/* Social buttons */}
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            className="h-12 flex items-center justify-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-sm font-semibold text-gray-700 transition-colors cursor-pointer shadow-sm"
-          >
-            <svg className="size-4" viewBox="0 0 24 24">
-              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-            </svg>
-            Google
-          </button>
-          <button
-            type="button"
-            className="h-12 flex items-center justify-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-sm font-semibold text-gray-700 transition-colors cursor-pointer shadow-sm"
-          >
-            <svg className="size-4 text-[#1877f2]" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-            </svg>
-            Facebook
-          </button>
-        </div>
-
-        <p className="mt-6 text-center text-sm text-gray-400">
+        <p className="mt-8 text-center text-sm text-gray-400">
           Already have an account?{' '}
           <Link href="/login" className="text-[#c0392b] font-semibold hover:underline">
             Log in here
           </Link>
+        </p>
+
+        <p className="mt-10 text-center text-[10px] text-gray-300 font-semibold tracking-widest uppercase">
+          Wali Baba Foods &copy; 2026 &bull; Royal Mughlai Cuisine
         </p>
       </div>
     </div>
