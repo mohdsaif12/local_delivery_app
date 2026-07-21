@@ -42,7 +42,13 @@ export async function POST(req: NextRequest) {
   try {
     await webpush.sendNotification(
       data.subscription as webpush.PushSubscription,
-      JSON.stringify({ title, body, url: url ?? '/', tag: tag ?? 'order-update' })
+      JSON.stringify({ title, body, url: url ?? '/', tag: tag ?? 'order-update' }),
+      {
+        TTL: 86400, // 24 hours retention if offline
+        headers: {
+          Urgency: 'high', // Tells Android FCM to trigger high-priority heads-up pop-up
+        },
+      }
     )
     return NextResponse.json({ ok: true }, { headers: CORS })
   } catch (err: unknown) {

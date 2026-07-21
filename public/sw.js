@@ -23,6 +23,11 @@ self.addEventListener('push', (event) => {
       icon: '/logo.png',
       badge: '/logo.png',
       tag: data.tag ?? 'order-update',
+      vibrate: [300, 100, 300, 100, 400], // Vibration pattern triggers Android Heads-Up popup & sound
+      renotify: true,                      // Force Android to re-alert (sound + pop-up) even if previous notification with same tag is showing
+      requireInteraction: true,           // Keeps notification visible on screen until user interacts
+      silent: false,
+      timestamp: Date.now(),
       data: { url: data.url ?? '/' },
     })
   )
