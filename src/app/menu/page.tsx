@@ -637,9 +637,9 @@ export default function MenuPage() {
       ` }} />
 
       <NavBar role="customer" onSearchClick={openSearch} isOpen={effectivelyOpen} openingTime={restaurantSettings?.opening_time} closedReason={closedReason} />
-      <PushSetup />
+      <PushSetup variant="menu" />
       <IOSInstallPrompt variant="menu" />
-      <AndroidInstallPrompt />
+      <AndroidInstallPrompt variant="menu" />
 
       {/* Closed banner — wording depends on why we're closed */}
       {closedReason === 'manual' ? (

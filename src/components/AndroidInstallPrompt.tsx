@@ -14,34 +14,45 @@ function isInstalled() {
   return window.matchMedia('(display-mode: standalone)').matches
 }
 
-const STORAGE_KEY = 'android-install-dismissed'
-
 interface Props {
-  /** ms to wait after the event before showing, so it doesn't interrupt load */
+  /** 'menu' = first reminder (after menu loads), 'order' = second reminder (on order tracking) */
+  variant?: 'menu' | 'order'
+  /** ms to wait after the event before showing */
   delay?: number
 }
 
-export default function AndroidInstallPrompt({ delay = 3000 }: Props) {
+export default function AndroidInstallPrompt({ variant = 'menu', delay = 3000 }: Props) {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
   const [show, setShow] = useState(false)
   const [installing, setInstalling] = useState(false)
 
+  const storageKey = `android-install-dismissed-${variant}`
+
   useEffect(() => {
     if (isInstalled()) return
-    try { if (localStorage.getItem(STORAGE_KEY) === '1') return } catch {}
+    try { if (sessionStorage.getItem(storageKey) === '1') return } catch {}
 
     let timer: ReturnType<typeof setTimeout>
 
     function onBeforeInstall(e: Event) {
-      // Stop Chrome's own mini-infobar; we show our themed prompt instead.
       e.preventDefault()
-      setDeferred(e as BeforeInstallPromptEvent)
+      const ev = e as BeforeInstallPromptEvent
+      setDeferred(ev)
+      // Save globally so other pages/components can access it
+      ;(window as unknown as { deferredInstallPrompt?: BeforeInstallPromptEvent }).deferredInstallPrompt = ev
       timer = setTimeout(() => setShow(true), delay)
     }
 
     function onInstalled() {
       setShow(false)
-      try { localStorage.setItem(STORAGE_KEY, '1') } catch {}
+      try { sessionStorage.setItem(storageKey, '1') } catch {}
+    }
+
+    // Check if event was captured globally earlier
+    const g = window as unknown as { deferredInstallPrompt?: BeforeInstallPromptEvent }
+    if (g.deferredInstallPrompt) {
+      setDeferred(g.deferredInstallPrompt)
+      timer = setTimeout(() => setShow(true), delay)
     }
 
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
@@ -51,7 +62,7 @@ export default function AndroidInstallPrompt({ delay = 3000 }: Props) {
       window.removeEventListener('appinstalled', onInstalled)
       clearTimeout(timer)
     }
-  }, [delay])
+  }, [delay, storageKey])
 
   async function handleInstall() {
     if (!deferred) return
@@ -62,13 +73,13 @@ export default function AndroidInstallPrompt({ delay = 3000 }: Props) {
     setShow(false)
     setDeferred(null)
     if (outcome === 'dismissed') {
-      try { localStorage.setItem(STORAGE_KEY, '1') } catch {}
+      try { sessionStorage.setItem(storageKey, '1') } catch {}
     }
   }
 
   function dismiss() {
     setShow(false)
-    try { localStorage.setItem(STORAGE_KEY, '1') } catch {}
+    try { sessionStorage.setItem(storageKey, '1') } catch {}
   }
 
   if (!show || !deferred) return null

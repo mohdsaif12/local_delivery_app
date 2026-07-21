@@ -43,10 +43,17 @@ function Banner({
   )
 }
 
-export default function PushSetup() {
+interface Props {
+  variant?: 'menu' | 'order'
+}
+
+export default function PushSetup({ variant = 'menu' }: Props) {
   usePushSubscription()
   const permState = usePushPermissionState()
-  const [dismissed, setDismissed] = useState(false)
+  const storageKey = `push-setup-dismissed-${variant}`
+  const [dismissed, setDismissed] = useState(() => {
+    try { return sessionStorage.getItem(storageKey) === '1' } catch { return false }
+  })
   const [loading, setLoading] = useState(false)
 
   // If permission was already granted (e.g. a returning device), make sure a
@@ -57,12 +64,17 @@ export default function PushSetup() {
     }
   }, [permState])
 
+  function handleDismiss() {
+    setDismissed(true)
+    try { sessionStorage.setItem(storageKey, '1') } catch {}
+  }
+
   async function handleEnable() {
     setLoading(true)
     const result = await requestPushPermission()
     setLoading(false)
     if (result.ok) {
-      setDismissed(true)
+      handleDismiss()
       toast.success('Notifications enabled!')
     } else {
       toast.error(result.error ?? 'Could not enable notifications')
@@ -74,7 +86,7 @@ export default function PushSetup() {
   if (permState === 'prompt') {
     return (
       <Banner
-        onDismiss={() => setDismissed(true)}
+        onDismiss={handleDismiss}
         icon={<Bell className="size-4 text-white" />}
         title="Enable order notifications"
         subtitle="Get notified when your order is ready"
@@ -95,7 +107,7 @@ export default function PushSetup() {
   if (permState === 'in-app-browser') {
     return (
       <Banner
-        onDismiss={() => setDismissed(true)}
+        onDismiss={handleDismiss}
         icon={<AlertCircle className="size-4 text-white" />}
         title="Open in Chrome for notifications"
         subtitle="Tap ⋮ → “Open in Chrome” to get order updates"
@@ -107,7 +119,7 @@ export default function PushSetup() {
   if (permState === 'denied') {
     return (
       <Banner
-        onDismiss={() => setDismissed(true)}
+        onDismiss={handleDismiss}
         icon={<AlertCircle className="size-4 text-white" />}
         title="Notifications are blocked"
         subtitle="Turn them on in your browser's site settings"

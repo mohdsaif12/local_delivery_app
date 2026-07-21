@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { CheckCircle, MapPin, X, ChevronRight } from 'lucide-react'
+import AndroidInstallPrompt from '@/components/AndroidInstallPrompt'
+import PushSetup from '@/components/PushSetup'
 
 export default async function OrderSuccessPage({
   params,
@@ -149,6 +151,8 @@ export default async function OrderSuccessPage({
           </Link>
         </div>
       </div>
+      <PushSetup variant="order" />
+      <AndroidInstallPrompt variant="order" delay={2000} />
     </div>
   )
 }

@@ -7,6 +7,8 @@ import { type OrderStatus, type PaymentStatus, type Complaint } from '@/lib/type
 import { toast } from 'sonner'
 import BottomNav from '@/components/BottomNav'
 import IOSInstallPrompt from '@/components/IOSInstallPrompt'
+import AndroidInstallPrompt from '@/components/AndroidInstallPrompt'
+import PushSetup from '@/components/PushSetup'
 import LiveMap from '@/components/LiveMap'
 import { usePushSubscription } from '@/hooks/usePushSubscription'
 import {
@@ -934,6 +936,8 @@ export default function OrderStatusPage({
       </div>
 
       <BottomNav />
+      <PushSetup variant="order" />
+      <AndroidInstallPrompt variant="order" delay={2000} />
       <IOSInstallPrompt variant="order" delay={5000} />
     </div>
   )

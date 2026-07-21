@@ -18,7 +18,17 @@ function SessionGuard() {
         router.push('/login')
       }
     })
-    return () => subscription.unsubscribe()
+
+    function handleBeforeInstall(e: Event) {
+      e.preventDefault()
+      ;(window as unknown as { deferredInstallPrompt?: Event }).deferredInstallPrompt = e
+    }
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall)
+
+    return () => {
+      subscription.unsubscribe()
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall)
+    }
   }, [router, pathname])
 
   return null
