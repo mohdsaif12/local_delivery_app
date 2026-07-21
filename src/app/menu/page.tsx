@@ -60,23 +60,23 @@ function getClosedReason(s: RestaurantSettings | null, now: Date): ClosedReason 
 }
 
 // Mirrors the dashboard's menu categories, in the same order.
-// `label` is the display name customers see; `slug` is what's stored on
-// products.category — the two differ (e.g. "Roasted" is stored as "tandoor").
-const CATEGORIES: { label: string; slug: string }[] = [
-  { label: 'Popular',        slug: 'popular' },
-  { label: 'All',            slug: 'all' },
-  { label: 'Biryani & Rice', slug: 'biryani' },
-  { label: 'Fried',          slug: 'fry' },
-  { label: 'Kebabs',         slug: 'kebabs' },
-  { label: 'Roasted',        slug: 'tandoor' },
-  { label: 'Gravies',        slug: 'gravy' },
-  { label: 'Breads',         slug: 'breads' },
-  { label: 'Dessert',        slug: 'dessert' },
-  { label: 'Veg',            slug: 'veg' },
-  { label: 'Combos',         slug: 'combos' },
-  { label: 'Combo',          slug: 'combo' },
-  { label: 'Others',         slug: 'other' },
+interface Category { label: string; slug: string }
+
+// Always-present tabs shown before the live categories from the dashboard.
+const BASE_CATEGORIES: Category[] = [
+  { label: 'Popular', slug: 'popular' },
+  { label: 'All', slug: 'all' },
 ]
+
+// Preferred display order for known slugs — the menu_categories table has no
+// sort_order column, so we order known ones here; unknown categories are
+// appended in fetch order and 'other' is kept last.
+const CATEGORY_ORDER = ['biryani', 'fry', 'kebabs', 'tandoor', 'gravy', 'breads', 'dessert', 'veg', 'combo', 'combos']
+function categoryRank(slug: string): number {
+  if (slug === 'other') return 999
+  const i = CATEGORY_ORDER.indexOf(slug)
+  return i === -1 ? 500 : i
+}
 
 // Hero banner photos are read from Supabase Storage at runtime — upload to
 // this bucket/folder and they appear in the slideshow automatically.
@@ -103,6 +103,100 @@ function getCategoryEmoji(category: string) {
   if (cat.includes('combo')) return '🍱'
   if (cat.includes('veg')) return '🥗'
   return '🍽'
+}
+
+// Per-dish prep times sourced from the kitchen's timing sheet (menu timer CSV).
+// Key = normalised dish name (lowercase, only a-z0-9 and single spaces).
+// Fallback: if the DB name doesn't match exactly, we try a partial match then
+// fall back to the category estimate so nothing shows a wrong time.
+const norm = (s: string) =>
+  (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')
+
+// Canonical times from the CSV, normalised keys
+const PREP_TIME_BY_DISH: Record<string, string> = {
+  'chicken biryani': '5 min',
+  'biryani rice': '5 min',
+  'chicken tikka rice': '10 min',
+  'mutton biryani 2 pcs': '10 min',
+  'mutton biryani 3 pcs': '10 min',
+  'chicken barra rice': '15 min',
+  'chicken leg rice': '15 min',
+  'chicken lollipop rice': '10 min',
+  'chicken tangdi rice': '15 min',
+  'chicken kaleji': '10 min',
+  'chicken leg fry': '10 min',
+  'chicken lollipop 4 pcs': '10 min',
+  'chicken tikka fry 5 pcs': '10 min',
+  'chicken chest fry': '10 min',
+  'chicken adana kebab': '10 min',
+  'chicken shami kebab': '10 min',
+  'special galouti kebab': '10 min',
+  'chicken aatishi': '15–20 min',
+  'chicken tandoori full': '20–25 min',
+  'chicken tikka': '15–20 min',
+  'chicken afghani barra 4pcs': '15–20 min',
+  'chicken peshawari tangdi 4pcs': '15–20 min',
+  'murgh malai tikka': '15–20 min',
+  'chicken leg roasted': '15–20 min',
+  'chicken chest roasted': '15–20 min',
+  'butter chicken boneless 3 pcs': '10 min',
+  'chicken korma boneless 3 pcs': '10 min',
+  'chicken stew boneless 3 pcs': '10 min',
+  'mutton rogan josh 2 pcs': '10 min',
+  'mutton rogan josh 4 pcs': '10 min',
+  'mutton korma 2 pcs': '10 min',
+  'mutton korma 4 pcs': '10 min',
+  'mutton stew 2 pcs': '10 min',
+  'mutton stew 4 pcs': '10 min',
+  'chicken tikka masala boneless 3 pcs': '10 min',
+  'kadhai chicken boneless 3 pcs': '10 min',
+  'butter tandoori roti': '10 min',
+  'tandoori butter roti': '10 min',   // DB word-order variant
+  'lachcha paratha': '10 min',
+  'rumali roti': '10 min',
+  'butter naan': '10 min',
+  'garlic butter naan': '10 min',
+  'plain naan': '10 min',
+  'plain tandoori roti': '10 min',
+  'tandoori plain roti': '10 min',    // DB word-order variant
+  'lassi': '5 min',
+  'shahi tukda': '5 min',
+  'zafrani kheer': '5 min',
+  'butter bun': '5 min',
+  'veg biryani': '5 min',
+  'paneer tikka masala gravy': '10 min',
+  'paneer makhani gravy': '10 min',
+  'kadhai paneer gravy': '10 min',
+  'paneer tikka roasted': '15 min',
+  'paneer malai tikka roasted': '15 min',
+  'family combo meal': '20 min',
+  'friends combo meal': '20 min',
+}
+
+const PREP_TIME_BY_CATEGORY: Record<string, string> = {
+  biryani: '10–15 min',
+  fry: '10 min',
+  kebabs: '10 min',
+  tandoor: '15–20 min',
+  gravy: '10 min',
+  breads: '10 min',
+  dessert: '5 min',
+  veg: '10–15 min',
+  combo: '20 min',
+  combos: '20 min',
+}
+
+function getPrepTime(dishName: string, category: string): string {
+  const key = norm(dishName)
+  // 1. Exact normalised match
+  if (PREP_TIME_BY_DISH[key]) return PREP_TIME_BY_DISH[key]
+  // 2. Partial match — DB name contains the CSV key or vice versa (handles
+  //    "(WithBone)" suffixes and minor spacing differences)
+  for (const [csvKey, time] of Object.entries(PREP_TIME_BY_DISH)) {
+    if (key.includes(csvKey) || csvKey.includes(key)) return time
+  }
+  // 3. Category fallback
+  return PREP_TIME_BY_CATEGORY[(category || '').toLowerCase()] ?? '15–20 min'
 }
 
 interface MenuItemCardProps {
@@ -158,7 +252,11 @@ function MenuItemCard({ item, onClick, restaurantOpen }: MenuItemCardProps) {
             )}
           </div>
           <h3 className="font-bold text-gray-900 text-sm leading-snug mb-1">{item.name}</h3>
-          <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed mb-2">{item.description}</p>
+          <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed mb-1.5">{item.description}</p>
+          <div className="flex items-center gap-1 text-[10px] text-gray-400 font-semibold mb-2">
+            <Clock className="size-3" />
+            {getPrepTime(item.name, item.category)}
+          </div>
           <div className="flex items-center justify-between">
             <span className="font-extrabold text-[#c0392b] text-base">₹{item.price}</span>
             {qty === 0 ? (
@@ -228,6 +326,7 @@ export default function MenuPage() {
   const [MENU, setMENU] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [restaurantSettings, setRestaurantSettings] = useState<RestaurantSettings | null>(null)
+  const [dbCategories, setDbCategories] = useState<Category[]>([])
 
   const [heroImages, setHeroImages] = useState<string[]>(HERO_IMAGES)
   const [heroIndex, setHeroIndex] = useState(0)
@@ -264,6 +363,20 @@ export default function MenuPage() {
 
     loadProducts()
     return () => { cancelled = true }
+  }, [supabase])
+
+  // Fetch the live categories the dashboard manages, ordered for display
+  useEffect(() => {
+    supabase
+      .from('menu_categories')
+      .select('name, slug')
+      .then(({ data }) => {
+        if (!data) return
+        const cats = data
+          .map((c) => ({ label: c.name as string, slug: (c.slug as string).toLowerCase() }))
+          .sort((a, b) => categoryRank(a.slug) - categoryRank(b.slug))
+        setDbCategories(cats)
+      })
   }, [supabase])
 
   // Fetch restaurant open/close status and subscribe to realtime changes
@@ -391,10 +504,11 @@ export default function MenuPage() {
     return MENU.filter(i => (i.category || '').toLowerCase() === slug).length
   }
 
-  // Hide tabs with nothing in them — the customer app only lists available
-  // dishes, so a category can be non-empty in the dashboard but empty here.
-  const visibleCategories = CATEGORIES.filter(
-    (c) => c.slug === 'all' || getCategoryCount(c.slug) > 0
+  // Base tabs + the live categories from the dashboard. Hide tabs with nothing
+  // in them — the app only lists available dishes, so a category can be
+  // non-empty in the dashboard but empty here.
+  const visibleCategories = [...BASE_CATEGORIES, ...dbCategories].filter(
+    (c) => c.slug === 'all' || c.slug === 'popular' || getCategoryCount(c.slug) > 0
   )
 
   // Horizontal scroll grab-and-drag states
@@ -741,7 +855,7 @@ export default function MenuPage() {
                 </span>
                 <span className="flex items-center gap-1 text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
                   <Clock className="size-3.5" />
-                  20–25 min
+                  {getPrepTime(selectedItem.name, selectedItem.category)}
                 </span>
               </div>
 

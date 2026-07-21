@@ -461,7 +461,7 @@ export default function DashboardClient({ initialOrders }: Props) {
     const order = orders.find((o) => o.id === orderId)
     const { error } = await supabase
       .from('orders')
-      .update({ status: 'cancelled', cancellation_reason: reason })
+      .update({ status: 'cancelled', cancellation_reason: reason, cancelled_at: new Date().toISOString() })
       .eq('id', orderId)
     if (error) {
       console.error('cancelOrder error:', error)
@@ -470,10 +470,20 @@ export default function DashboardClient({ initialOrders }: Props) {
       toast.success('Order cancelled')
       setCancellingOrderId(null)
       setOrders((prev) =>
-        prev.map((o) => o.id === orderId ? { ...o, status: 'cancelled', cancellation_reason: reason } : o)
+        prev.map((o) => o.id === orderId ? { ...o, status: 'cancelled', cancellation_reason: reason, cancelled_at: new Date().toISOString() } : o)
       )
       if (order?.customer_id) {
-        sendPush(order.customer_id, '❌ Order Cancelled', 'Your order was cancelled by the restaurant.', `/orders/${orderId}`, 'order-update')
+        const isAutoCancel = !reason || reason === 'other' ||
+          (typeof reason === 'string' && reason.toLowerCase().includes('auto-cancel'))
+        sendPush(
+          order.customer_id,
+          isAutoCancel ? '⚠️ Order Could Not Be Accepted' : '❌ Order Cancelled',
+          isAutoCancel
+            ? 'Your order could not be accepted. Please re-order.'
+            : 'Your order was cancelled by the restaurant.',
+          `/orders/${orderId}`,
+          'order-update'
+        )
       }
     }
     setUpdating(null)
@@ -649,6 +659,11 @@ export default function DashboardClient({ initialOrders }: Props) {
                         {isCustomer && (
                           <p className="text-[10px] text-gray-400 font-medium mt-0.5">
                             Customer cancelled within the 5-minute window
+                          </p>
+                        )}
+                        {order.cancelled_at && (
+                          <p className="text-[10px] text-gray-400 font-medium mt-0.5">
+                            Cancelled at {new Date(order.cancelled_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
                           </p>
                         )}
                       </div>

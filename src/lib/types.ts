@@ -100,6 +100,7 @@ export interface Order {
   delivery_fee: number
   total: number
   created_at: string
+  cancelled_at: string | null
   customer?: Pick<Profile, 'full_name' | 'phone'>
   rider?: Pick<Profile, 'full_name' | 'phone'>
   order_items?: OrderItem[]

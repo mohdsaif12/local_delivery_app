@@ -15,27 +15,26 @@ interface Props {
   userId: string
 }
 
-// ── 6-step stepper (includes Ready) ─────────────────────────
+// ── 5-step stepper: Accepted → Preparing → Ready → Out for Delivery → Delivered ──
 const STATUS_STEPS: { status: OrderStatus; label: string; icon: React.ElementType; color: string }[] = [
-  { status: 'pending',          label: 'Received',  icon: Package,     color: '#b51c00' },
-  { status: 'accepted',         label: 'Accepted',  icon: ThumbsUp,    color: '#7c3aed' },
-  { status: 'preparing',        label: 'Preparing', icon: ChefHat,     color: '#f59e0b' },
-  { status: 'ready',            label: 'Ready',     icon: Package,     color: '#16a34a' },
-  { status: 'out_for_delivery', label: 'On the Way',icon: Bike,        color: '#2563eb' },
-  { status: 'delivered',        label: 'Arrived',   icon: CheckCircle, color: '#15803d' },
+  { status: 'accepted',         label: 'Accepted',         icon: ThumbsUp,    color: '#7c3aed' },
+  { status: 'preparing',        label: 'Preparing',        icon: ChefHat,     color: '#f59e0b' },
+  { status: 'ready',            label: 'Ready',            icon: Package,     color: '#16a34a' },
+  { status: 'out_for_delivery', label: 'Out for Delivery', icon: Bike,        color: '#2563eb' },
+  { status: 'delivered',        label: 'Delivered',        icon: CheckCircle, color: '#15803d' },
 ]
 
 function statusIndex(status: OrderStatus): number {
   const map: Record<OrderStatus, number> = {
-    pending:          0,
-    accepted:         1,
-    preparing:        2,
-    ready:            3,
-    out_for_delivery: 4,
-    delivered:        5,
+    pending:          -1,   // nothing lit — waiting to be accepted
+    accepted:          0,
+    preparing:         1,
+    ready:             2,
+    out_for_delivery:  3,
+    delivered:         4,
     cancelled:        -1,
   }
-  return map[status] ?? 0
+  return map[status] ?? -1
 }
 
 // ── Animated Stepper ─────────────────────────────────────────
@@ -281,7 +280,10 @@ export default function OrdersClient({ initialOrders, userId }: Props) {
       {orders.map((order) => {
         const isCancelled = order.status === 'cancelled'
         const cancelReason = order.cancellation_reason
-        const isRestaurantCancelled = isCancelled && cancelReason !== 'customer_requested'
+        // Auto-cancelled by DB cron (10-min timeout) — treat same as no manual reason
+        const isAutoCancelled =
+          typeof cancelReason === 'string' && cancelReason.toLowerCase().includes('auto-cancel')
+        const isRestaurantCancelled = isCancelled && !isAutoCancelled && cancelReason !== null && cancelReason !== 'customer_requested'
         const isCustomerCancelled   = isCancelled && cancelReason === 'customer_requested'
         const isNavigating = navigatingId === order.id
 
@@ -333,23 +335,34 @@ export default function OrdersClient({ initialOrders, userId }: Props) {
             {isCancelled && (
               <div className={`mx-4 mb-2 mt-2 rounded-lg px-3 py-2 ${
                 isRestaurantCancelled ? 'bg-orange-50 border border-orange-100' :
-                isCustomerCancelled   ? 'bg-red-50' :
-                'bg-gray-50 border border-gray-100'
+                isCustomerCancelled   ? 'bg-red-50 border border-red-100' :
+                'bg-amber-50 border border-amber-100'
               }`}>
                 <p className={`text-[10px] font-semibold ${
                   isRestaurantCancelled ? 'text-orange-700' :
                   isCustomerCancelled   ? 'text-red-500' :
-                  'text-gray-500'
+                  'text-amber-700'
                 }`}>
                   {isRestaurantCancelled
                     ? '🏪 Cancelled by the Restaurant'
                     : isCustomerCancelled
                     ? '👤 You cancelled this order'
-                    : '❌ This order was cancelled'}
+                    : '⚠️ Order could not be accepted'}
                 </p>
+                {/* No reason OR auto-cancelled by timeout = technical issue message */}
+                {(!cancelReason || isAutoCancelled) && !isCustomerCancelled && (
+                  <p className="text-[10px] text-amber-600 font-medium mt-0.5">
+                    This order could not be accepted due to a technical issue. Please re-order.
+                  </p>
+                )}
                 {isRestaurantCancelled && cancelReason && cancelReason !== 'other' && (
                   <p className="text-[10px] text-orange-600 font-medium mt-0.5">
                     Reason: {CANCEL_REASON_LABELS[cancelReason as keyof typeof CANCEL_REASON_LABELS] ?? cancelReason}
+                  </p>
+                )}
+                {order.cancelled_at && (
+                  <p className="text-[10px] text-gray-400 font-medium mt-0.5">
+                    🕐 Cancelled at {new Date(order.cancelled_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
                   </p>
                 )}
               </div>

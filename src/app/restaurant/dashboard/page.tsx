@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import NavBar from '@/components/NavBar'
 import DashboardClient from '@/components/DashboardClient'
+import HeroImagesManager from '@/components/HeroImagesManager'
 import { Order } from '@/lib/types'
 
 export default async function DashboardPage() {
@@ -32,6 +33,7 @@ export default async function DashboardPage() {
     <div className="min-h-[100dvh] bg-gray-50">
       <NavBar role="restaurant" />
       <main className="phone-screen px-4 pt-4 pb-8">
+        <HeroImagesManager />
         <div className="mb-4">
           <h1 className="text-xl font-bold text-gray-900">Live Orders</h1>
           <p className="text-sm text-muted-foreground">New orders appear automatically</p>
