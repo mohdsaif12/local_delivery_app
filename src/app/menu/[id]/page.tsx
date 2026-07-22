@@ -41,7 +41,7 @@ export default function ProductDetailPage({
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('products').select('*').eq('id', id).single().then(({ data }) => {
+    supabase.from('products').select('id,name,description,price,photo_url,is_veg,category,variants').eq('id', id).single().then(({ data }) => {
       setProduct(data as Product)
       setLoading(false)
     })

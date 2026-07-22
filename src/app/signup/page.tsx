@@ -26,76 +26,91 @@ export default function SignupPage() {
 
   const cleanPhone = phone.replace(/\D/g, '')
 
+  const [sessionId, setSessionId] = useState('')
+
   async function handleSendOtp(e: React.SyntheticEvent) {
     e.preventDefault()
     if (!agreed) { toast.error('Please agree to the Terms & Conditions'); return }
     if (cleanPhone.length < 10) { toast.error('Please enter a valid 10-digit mobile number'); return }
 
     setLoading(true)
-    const supabase = createClient()
-    const fullPhone = `+91${cleanPhone.slice(-10)}`
 
-    const { error } = await supabase.auth.signInWithOtp({
-      phone: fullPhone,
-      options: {
-        data: {
-          full_name: name,
-          phone: cleanPhone.slice(-10),
-          role: 'customer',
-        },
-      },
-    })
+    try {
+      const res = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone.slice(-10) }),
+      })
+      const data = await res.json()
+      setLoading(false)
 
-    setLoading(false)
+      if (!res.ok || !data.ok) {
+        toast.error(data.error || 'Failed to send OTP via SMS')
+        return
+      }
 
-    if (error) {
-      toast.error(error.message)
-      return
+      setSessionId(data.sessionId)
+      toast.success(`OTP sent to +91 ${cleanPhone.slice(-10)}`)
+      setStep('otp')
+      setResendCountdown(30)
+    } catch {
+      setLoading(false)
+      toast.error('Failed to send OTP. Please check your internet connection.')
     }
-
-    toast.success(`OTP sent to +91 ${cleanPhone.slice(-10)}`)
-    setStep('otp')
-    setResendCountdown(30)
   }
 
   async function handleVerifyOtp(e: React.SyntheticEvent) {
     e.preventDefault()
     if (otp.length < 6) { toast.error('Please enter the full 6-digit OTP'); return }
+    if (!sessionId) { toast.error('Session expired. Please resend OTP.'); return }
 
     setLoading(true)
-    const supabase = createClient()
-    const fullPhone = `+91${cleanPhone.slice(-10)}`
 
-    const { data, error } = await supabase.auth.verifyOtp({
-      phone: fullPhone,
-      token: otp.trim(),
-      type: 'sms',
-    })
-
-    if (error) {
-      toast.error(error.message || 'Invalid OTP code')
-      setLoading(false)
-      return
-    }
-
-    // Upsert profile record with customer's full_name
-    if (data.user) {
-      await supabase.from('profiles').upsert({
-        id: data.user.id,
-        full_name: name,
-        phone: cleanPhone.slice(-10),
-        role: 'customer',
+    try {
+      // 1. Verify OTP with 2Factor.in & create/get Supabase user via Vercel API
+      const res = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanPhone.slice(-10),
+          otp: otp.trim(),
+          sessionId,
+          name,
+        }),
       })
+
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        toast.error(data.error || 'Invalid OTP code')
+        setLoading(false)
+        return
+      }
+
+      // 2. Establish official Supabase session in browser
+      const supabase = createClient()
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      })
+
+      if (signInErr) {
+        toast.error('Verification succeeded, but login failed. Please try logging in.')
+        setLoading(false)
+        return
+      }
+
+      toast.success('Account created successfully!')
+      setShowSplash(true)
+      setLoading(false)
+
+      setTimeout(() => {
+        router.push('/location')
+        router.refresh()
+      }, 2000)
+    } catch {
+      setLoading(false)
+      toast.error('Verification failed. Please try again.')
     }
-
-    toast.success('Account created successfully!')
-    setShowSplash(true)
-    setLoading(false)
-
-    setTimeout(() => {
-      router.push('/location')
-      router.refresh()
-    }, 2000)
   }
 
   if (showSplash) {

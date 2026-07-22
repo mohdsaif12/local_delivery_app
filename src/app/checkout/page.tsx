@@ -46,7 +46,7 @@ export default function CheckoutPage() {
       const [{ data: address }, { data: restaurant }] = await Promise.all([
         supabase
           .from('addresses')
-          .select('*')
+          .select('label, address, landmark, pincode, latitude, longitude')
           .eq('customer_id', user.id)
           .eq('is_default', true)
           .maybeSingle(),

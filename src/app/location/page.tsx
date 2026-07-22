@@ -13,6 +13,8 @@ import {
   Search,
   Plus,
   CheckCircle2,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 
 const LABEL_PRESETS = ['Home', 'Work', 'Other']
@@ -40,6 +42,7 @@ function LocationContent() {
   const [addresses, setAddresses] = useState<Address[]>([])
   const [search, setSearch] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null)
   const [locating, setLocating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -86,6 +89,37 @@ function LocationContent() {
     router.push(returnTo)
   }
 
+  function handleEditClick(e: React.MouseEvent, addr: Address) {
+    e.stopPropagation()
+    setEditingAddress(addr)
+    setForm({
+      label: addr.label || 'Home',
+      address: addr.address || '',
+      landmark: addr.landmark || '',
+      pincode: addr.pincode || '',
+    })
+    if (addr.latitude && addr.longitude) {
+      setFormCoords({ lat: addr.latitude, lng: addr.longitude })
+    } else {
+      setFormCoords(null)
+    }
+    setError('')
+    setShowAddForm(true)
+  }
+
+  async function handleDeleteClick(e: React.MouseEvent, addrId: string) {
+    e.stopPropagation()
+    if (!confirm('Are you sure you want to delete this saved address?')) return
+
+    const supabase = createClient()
+    const { error: deleteErr } = await supabase.from('addresses').delete().eq('id', addrId)
+    if (deleteErr) {
+      setError('Failed to delete address.')
+    } else {
+      fetchAddresses()
+    }
+  }
+
   function handleUseCurrentLocation() {
     setLocating(true)
     setError('')
@@ -108,7 +142,7 @@ function LocationContent() {
     )
   }
 
-  async function handleAddAddress(e: React.FormEvent) {
+  async function handleSaveAddress(e: React.FormEvent) {
     e.preventDefault()
     if (!form.address.trim() || !form.pincode.trim()) {
       setError('Please fill in your address and pincode.')
@@ -149,25 +183,50 @@ function LocationContent() {
       }
     }
 
-    await supabase.from('addresses').update({ is_default: false }).eq('customer_id', user.id)
-    const { error: insertError } = await supabase.from('addresses').insert({
-      customer_id: user.id,
-      label: form.label.trim() || 'Home',
-      address: form.address.trim(),
-      landmark: form.landmark.trim() || null,
-      pincode: form.pincode.trim(),
-      latitude: lat,
-      longitude: lng,
-      is_default: true,
-    })
+    if (editingAddress) {
+      // ── UPDATE EXISTING ADDRESS ──
+      const { error: updateError } = await supabase
+        .from('addresses')
+        .update({
+          label: form.label.trim() || 'Home',
+          address: form.address.trim(),
+          landmark: form.landmark.trim() || null,
+          pincode: form.pincode.trim(),
+          latitude: lat,
+          longitude: lng,
+        })
+        .eq('id', editingAddress.id)
 
-    if (insertError) {
-      setError('Failed to save address. Please try again.')
       setSaving(false)
-      return
-    }
+      if (updateError) {
+        setError('Failed to update address. Please try again.')
+        return
+      }
+      setEditingAddress(null)
+      setShowAddForm(false)
+      fetchAddresses()
+    } else {
+      // ── INSERT NEW ADDRESS ──
+      await supabase.from('addresses').update({ is_default: false }).eq('customer_id', user.id)
+      const { error: insertError } = await supabase.from('addresses').insert({
+        customer_id: user.id,
+        label: form.label.trim() || 'Home',
+        address: form.address.trim(),
+        landmark: form.landmark.trim() || null,
+        pincode: form.pincode.trim(),
+        latitude: lat,
+        longitude: lng,
+        is_default: true,
+      })
 
-    router.push(returnTo)
+      if (insertError) {
+        setError('Failed to save address. Please try again.')
+        setSaving(false)
+        return
+      }
+
+      router.push(returnTo)
+    }
   }
 
   const filteredAddresses = addresses.filter(
@@ -201,7 +260,7 @@ function LocationContent() {
 
         <div className="relative w-full aspect-square max-h-[52vw] sm:max-h-[260px] overflow-hidden rounded-b-3xl bg-[#1a1a1a]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/location-hero.png" alt="Find your location" className="w-full h-full object-cover" />
+          <img src="/location-hero.webp" alt="Find your location" loading="lazy" decoding="async" className="w-full h-full object-cover" />
           <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#f9f6f4] to-transparent" />
         </div>
 
@@ -243,7 +302,12 @@ function LocationContent() {
             </button>
 
             <button
-              onClick={() => setShowAddForm(true)}
+              onClick={() => {
+                setEditingAddress(null)
+                setForm({ label: 'Home', address: '', landmark: '', pincode: '' })
+                setFormCoords(null)
+                setShowAddForm(true)
+              }}
               className="w-full h-12 text-[#b51c00] font-bold text-sm flex items-center justify-center gap-1.5 rounded-2xl hover:bg-red-50 transition-colors"
             >
               Enter Address Manually
@@ -259,18 +323,26 @@ function LocationContent() {
     )
   }
 
-  // ── Add new address form ──
+  // ── Add / Edit address form ──
   if (showAddForm) {
     return (
       <div className="min-h-[100dvh] phone-screen flex flex-col bg-[#f8f9fa]">
         <header className="bg-white sticky top-0 z-40 px-4 h-14 flex items-center gap-3 border-b border-[#e1e3e4]">
-          <button onClick={() => setShowAddForm(false)} className="p-1 -ml-1">
+          <button
+            onClick={() => {
+              setShowAddForm(false)
+              setEditingAddress(null)
+            }}
+            className="p-1 -ml-1"
+          >
             <ChevronLeft className="size-5 text-[#191c1d]" />
           </button>
-          <h1 className="text-base font-bold text-[#b51c00]">Add New Address</h1>
+          <h1 className="text-base font-bold text-[#b51c00]">
+            {editingAddress ? 'Edit Address' : 'Add New Address'}
+          </h1>
         </header>
 
-        <form onSubmit={handleAddAddress} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <form onSubmit={handleSaveAddress} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl px-4 py-3">
               {error}
@@ -351,7 +423,7 @@ function LocationContent() {
             disabled={saving}
             className="w-full h-14 bg-[#b51c00] text-white font-bold rounded-xl disabled:opacity-70"
           >
-            {saving ? 'Saving…' : 'Save Address'}
+            {saving ? 'Saving…' : editingAddress ? 'Update Address' : 'Save Address'}
           </button>
         </form>
       </div>
@@ -391,6 +463,7 @@ function LocationContent() {
         </button>
         <button
           onClick={() => {
+            setEditingAddress(null)
             setForm({ label: 'Home', address: '', landmark: '', pincode: '' })
             setFormCoords(null)
             setShowAddForm(true)
@@ -414,11 +487,10 @@ function LocationContent() {
         </p>
         <div className="space-y-2">
           {filteredAddresses.map((addr) => (
-            <button
+            <div
               key={addr.id}
               onClick={() => selectAddress(addr)}
-              disabled={saving}
-              className="w-full text-left bg-white rounded-xl p-4 flex items-start gap-3 disabled:opacity-60"
+              className="w-full text-left bg-white rounded-xl p-4 flex items-start gap-3 cursor-pointer group hover:border-[#b51c00]/30 transition-colors border border-transparent"
               style={{ boxShadow: '0 2px 8px rgba(45,52,54,0.06)' }}
             >
               <MapPin className="size-4 text-[#b51c00] flex-shrink-0 mt-0.5" />
@@ -436,7 +508,27 @@ function LocationContent() {
                   {addr.landmark ? `, ${addr.landmark}` : ''} — {addr.pincode}
                 </p>
               </div>
-            </button>
+
+              {/* Edit & Delete Action Buttons */}
+              <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                <button
+                  type="button"
+                  onClick={(e) => handleEditClick(e, addr)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-[#b51c00] hover:bg-red-50 transition-colors"
+                  title="Edit Address"
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteClick(e, addr.id)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  title="Delete Address"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       </div>

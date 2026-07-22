@@ -69,7 +69,7 @@ export default function HeroImagesManager() {
 
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
-        .upload(path, compressed, { contentType: compressed.type, upsert: false })
+        .upload(path, compressed, { contentType: compressed.type, upsert: false, cacheControl: '31536000' })
       if (upErr) throw upErr
 
       const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path)

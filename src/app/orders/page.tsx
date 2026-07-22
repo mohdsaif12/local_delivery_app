@@ -57,7 +57,7 @@ export default function OrdersPage() {
 
       const { data } = await supabase
         .from('orders')
-        .select('*, order_items(quantity, price_at_order, products(name))')
+        .select('id, order_number, status, cancellation_reason, cancelled_at, created_at, delivery_address, total, order_items(quantity, price_at_order, products(name))')
         .eq('customer_id', user.id)
         .order('created_at', { ascending: false })
 

@@ -25,78 +25,113 @@ export default function LoginPage() {
 
   const cleanPhone = phone.replace(/\D/g, '')
 
+  const [sessionId, setSessionId] = useState('')
+
   async function handleSendOtp(e: React.SyntheticEvent) {
     e.preventDefault()
     if (cleanPhone.length < 10) { toast.error('Please enter a valid 10-digit mobile number'); return }
 
     setLoading(true)
-    const supabase = createClient()
-    const fullPhone = `+91${cleanPhone.slice(-10)}`
 
-    const { error } = await supabase.auth.signInWithOtp({
-      phone: fullPhone,
-    })
+    try {
+      const res = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone.slice(-10) }),
+      })
+      const data = await res.json()
+      setLoading(false)
 
-    setLoading(false)
+      if (!res.ok || !data.ok) {
+        toast.error(data.error || 'Failed to send OTP via SMS')
+        return
+      }
 
-    if (error) {
-      toast.error(error.message)
-      return
+      setSessionId(data.sessionId)
+      toast.success(`OTP sent to +91 ${cleanPhone.slice(-10)}`)
+      setStep('otp')
+      setResendCountdown(30)
+    } catch {
+      setLoading(false)
+      toast.error('Failed to send OTP. Please check your internet connection.')
     }
-
-    toast.success(`OTP sent to +91 ${cleanPhone.slice(-10)}`)
-    setStep('otp')
-    setResendCountdown(30)
   }
 
   async function handleVerifyOtp(e: React.SyntheticEvent) {
     e.preventDefault()
     if (otp.length < 6) { toast.error('Please enter the full 6-digit OTP'); return }
+    if (!sessionId) { toast.error('Session expired. Please resend OTP.'); return }
 
     setLoading(true)
-    const supabase = createClient()
-    const fullPhone = `+91${cleanPhone.slice(-10)}`
 
-    const { data, error } = await supabase.auth.verifyOtp({
-      phone: fullPhone,
-      token: otp.trim(),
-      type: 'sms',
-    })
+    try {
+      // 1. Verify OTP with 2Factor.in & create/get Supabase user via Vercel API
+      const res = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanPhone.slice(-10),
+          otp: otp.trim(),
+          sessionId,
+        }),
+      })
 
-    if (error || !data.user) {
-      toast.error(error?.message || 'Invalid OTP code')
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        toast.error(data.error || 'Invalid OTP code')
+        setLoading(false)
+        return
+      }
+
+      // 2. Establish official Supabase session in browser
+      const supabase = createClient()
+
+      // Kick out any other device logged in with this account
+      await supabase.auth.signOut({ scope: 'others' })
+
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      })
+
+      if (signInErr) {
+        toast.error('Verification succeeded, but login failed. Please try again.')
+        setLoading(false)
+        return
+      }
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setLoading(false); return }
+
+      const { data: profile } = await supabase
+        .from('profiles').select('role, full_name').eq('id', user.id).single()
+
+      const name = profile?.full_name || user.user_metadata?.full_name || 'Foodie'
+      setUserName(name)
+
+      // Decide destination before showing splash
+      let destination = '/menu'
+      if (profile?.role === 'restaurant') {
+        destination = '/restaurant/dashboard'
+      } else {
+        const { count } = await supabase
+          .from('addresses')
+          .select('id', { count: 'exact', head: true })
+          .eq('customer_id', user.id)
+        destination = count && count > 0 ? '/menu' : '/location'
+      }
+
+      setShowSplash(true)
       setLoading(false)
-      return
+
+      setTimeout(() => {
+        router.push(destination)
+        router.refresh()
+      }, 2000)
+    } catch {
+      setLoading(false)
+      toast.error('Verification failed. Please try again.')
     }
-
-    // Kick out any other device logged in with this account
-    await supabase.auth.signOut({ scope: 'others' })
-
-    const { data: profile } = await supabase
-      .from('profiles').select('role, full_name').eq('id', data.user.id).single()
-
-    const name = profile?.full_name || data.user.user_metadata?.full_name || 'Foodie'
-    setUserName(name)
-
-    // Decide destination before showing splash
-    let destination = '/menu'
-    if (profile?.role === 'restaurant') {
-      destination = '/restaurant/dashboard'
-    } else {
-      const { count } = await supabase
-        .from('addresses')
-        .select('id', { count: 'exact', head: true })
-        .eq('customer_id', data.user.id)
-      destination = count && count > 0 ? '/menu' : '/location'
-    }
-
-    setShowSplash(true)
-    setLoading(false)
-
-    setTimeout(() => {
-      router.push(destination)
-      router.refresh()
-    }, 2000)
   }
 
   if (showSplash) {

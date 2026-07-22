@@ -17,7 +17,7 @@ export default async function OrderSuccessPage({
 
   const { data: order } = await supabase
     .from('orders')
-    .select('*, order_items(quantity, price_at_order, products(name))')
+    .select('id, delivery_address')
     .eq('id', id)
     .eq('customer_id', user.id)
     .single()

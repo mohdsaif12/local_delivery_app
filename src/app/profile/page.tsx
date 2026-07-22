@@ -36,7 +36,7 @@ export default function ProfilePage() {
       // Fetch profile row
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('*')
+        .select('full_name, email, phone')
         .eq('id', currentUser.id)
         .maybeSingle()
 

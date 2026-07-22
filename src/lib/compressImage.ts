@@ -14,7 +14,7 @@ interface CompressOptions {
 
 export async function compressImage(
   file: File,
-  { maxWidth = 1600, quality = 0.8 }: CompressOptions = {}
+  { maxWidth = 1200, quality = 0.8 }: CompressOptions = {}
 ): Promise<File> {
   if (!file.type.startsWith('image/')) return file
   // GIFs would lose animation, SVGs are already tiny vectors — leave them be.
@@ -44,16 +44,28 @@ export async function compressImage(
   ctx.drawImage(bitmap, 0, 0, width, height)
   bitmap.close()
 
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, 'image/jpeg', quality)
+  // WebP is ~25-35% smaller than JPEG at equal quality and is supported by
+  // every browser this PWA targets. Fall back to JPEG only if the canvas
+  // can't produce WebP (very old engines).
+  let blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, 'image/webp', quality)
   )
+  let outType = 'image/webp'
+  let outExt = '.webp'
+  if (!blob) {
+    blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', quality)
+    )
+    outType = 'image/jpeg'
+    outExt = '.jpg'
+  }
 
   // If compression didn't actually help (e.g. already-optimised small image),
   // keep the original rather than re-encoding it for nothing.
   if (!blob || blob.size >= file.size) return file
 
-  const name = file.name.replace(/\.[^.]+$/, '') + '.jpg'
-  return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() })
+  const name = file.name.replace(/\.[^.]+$/, '') + outExt
+  return new File([blob], name, { type: outType, lastModified: Date.now() })
 }
 
 /** Human-readable byte size, e.g. "16.3 MB". */

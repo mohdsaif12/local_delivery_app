@@ -20,6 +20,9 @@ export interface Product {
   is_veg: boolean | null
   category: string
   variants: { name: string; price: number }[]
+  sort_order?: number | null
+  display_order?: number | null
+  position?: number | null
 }
 
 export interface DeliveryAddress {

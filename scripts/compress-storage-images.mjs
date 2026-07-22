@@ -1,8 +1,13 @@
 // Compress images already sitting in a Supabase Storage folder, in place.
 //
 // Downloads each image, resizes it to a sane display size, re-encodes it as
-// JPEG, and re-uploads it under the SAME name — so every existing public URL
-// keeps working and nothing else needs to change.
+// WebP, and re-uploads it under the SAME path — so every existing public URL
+// keeps working and nothing else needs to change. Browsers render by the
+// Content-Type header (image/webp), not the file extension, so a "chicken.png"
+// object now serving WebP bytes just works with no DB update.
+//
+// Also sets a 1-year immutable cache header, so repeat views are served from
+// the browser/CDN cache instead of re-downloading (cuts Storage egress).
 //
 // Setup:
 //   npm i -D sharp
@@ -33,8 +38,9 @@ const DRY_RUN = process.argv.includes('--dry-run')
 const BUCKET = args[0] ?? 'menu-photos'
 const FOLDER = args[1] ?? 'dishes/hero section photos'
 
-const MAX_WIDTH = 1600 // plenty for a full-bleed phone banner
-const QUALITY = 80
+const MAX_WIDTH = 1200 // plenty for a full-bleed phone banner
+const QUALITY = 72     // WebP at 72 ≈ visually lossless for food photos
+const CACHE_ONE_YEAR = '31536000'
 
 const supabase = createClient(url, serviceKey, { auth: { persistSession: false } })
 const isImage = (name) => /\.(jpe?g|png|webp|avif)$/i.test(name)
@@ -74,7 +80,7 @@ async function main() {
       const output = await sharp(input)
         .rotate() // honour EXIF orientation
         .resize({ width: MAX_WIDTH, withoutEnlargement: true })
-        .jpeg({ quality: QUALITY, mozjpeg: true })
+        .webp({ quality: QUALITY })
         .toBuffer()
 
       if (output.length >= input.length) {
@@ -86,7 +92,11 @@ async function main() {
       if (!DRY_RUN) {
         const { error: upErr } = await supabase.storage
           .from(BUCKET)
-          .upload(path, output, { contentType: 'image/jpeg', upsert: true })
+          .upload(path, output, {
+            contentType: 'image/webp',
+            upsert: true,
+            cacheControl: CACHE_ONE_YEAR,
+          })
         if (upErr) throw upErr
       }
 

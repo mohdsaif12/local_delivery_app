@@ -343,6 +343,9 @@ export default function OrderStatusPage({
   const [cancelling, setCancelling] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const cancelDeadlineRef = useRef<number | null>(null)
+  // Latest status, readable from the polling closure without re-running the effect
+  const statusRef = useRef<OrderStatus | null>(null)
+  statusRef.current = order?.status ?? null
 
   const fetchOrder = useCallback(async () => {
     const supabase = createClient()
@@ -391,8 +394,18 @@ export default function OrderStatusPage({
         if (status === 'SUBSCRIBED') fetchOrder()
       })
 
-    // Tight polling as a safety net (10s)
-    const timer = setInterval(fetchOrder, 10_000)
+    // Realtime is the primary source of truth. Keep only a slow 60s fallback
+    // that fires when the tab is visible and the order isn't in a terminal
+    // state — so a dropped socket still recovers without polling every 10s.
+    const timer = setInterval(() => {
+      if (
+        document.visibilityState === 'visible' &&
+        statusRef.current !== 'delivered' &&
+        statusRef.current !== 'cancelled'
+      ) {
+        fetchOrder()
+      }
+    }, 60_000)
     const clock = setInterval(() => setNow(Date.now()), 1000)
 
     // Re-fetch instantly when user returns to this tab

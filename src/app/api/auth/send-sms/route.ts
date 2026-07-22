@@ -29,16 +29,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing phone or OTP in payload' }, { status: 400, headers: CORS_HEADERS })
     }
 
-    // Strip non-digits, e.g. "+917905581778" -> "917905581778" or "7905581778" -> "917905581778"
+    // Strip non-digits and normalise to 10-digit local number
     let cleanPhone = String(rawPhone).replace(/\D/g, '')
-    if (cleanPhone.length === 10) {
-      cleanPhone = `91${cleanPhone}`
-    }
+    if (cleanPhone.length > 10) cleanPhone = cleanPhone.slice(-10)
 
-    console.log(`[SMS Webhook] Sending OTP ${otp} to ${cleanPhone} via 2Factor.in`)
+    // 2Factor AUTOGEN SMS endpoint requires international format with leading +
+    const intlPhone = `+91${cleanPhone}`
 
-    // Call 2Factor.in OTP API
-    const url = `https://2factor.in/API/V1/${apiKey}/SMS/${cleanPhone}/${otp}`
+    console.log(`[SMS Webhook] Sending AUTOGEN OTP to ${intlPhone} via 2Factor.in`)
+
+    // Use AUTOGEN endpoint so 2Factor sends via SMS (not voice).
+    // OTP_VERIFICATION = DLT-approved template with sender BBRYNI
+    // Passing a raw numeric OTP in the path triggers voice fallback on 2Factor.
+    const url = `https://2factor.in/API/V1/${apiKey}/SMS/${intlPhone}/AUTOGEN/OTP_VERIFICATION`
     const res = await fetch(url, { method: 'GET' })
     const resData = await res.json()
 

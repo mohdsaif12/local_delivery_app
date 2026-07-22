@@ -201,7 +201,7 @@ function statusLabel(status: OrderStatus, cancelReason: CancelReason) {
   return map[status as Exclude<OrderStatus, 'cancelled'>] ?? status
 }
 
-const ORDER_SELECT = '*, order_items(quantity, price_at_order, products(name))'
+const ORDER_SELECT = 'id, order_number, status, cancellation_reason, cancelled_at, created_at, delivery_address, total, order_items(quantity, price_at_order, products(name))'
 
 // ── Main component ───────────────────────────────────────────
 export default function OrdersClient({ initialOrders, userId }: Props) {
@@ -242,15 +242,17 @@ export default function OrdersClient({ initialOrders, userId }: Props) {
           .from('orders').select(ORDER_SELECT).eq('id', payload.new.id as string).single()
         if (data) setOrders(prev => [data as Order, ...prev])
       })
-      .subscribe(s => { if (s === 'SUBSCRIBED') fetchAllOrders() })
+      // Realtime handles INSERT/UPDATE per-row; the page already seeds
+      // initialOrders, so no full refetch on subscribe.
+      .subscribe()
 
-    const poller = setInterval(fetchAllOrders, 15_000)
+    // Safety net only: refetch when the user returns to the tab (covers any
+    // events missed while the socket was backgrounded). No interval polling.
     const onVisible = () => { if (document.visibilityState === 'visible') fetchAllOrders() }
     document.addEventListener('visibilitychange', onVisible)
 
     return () => {
       supabase.removeChannel(channel)
-      clearInterval(poller)
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [userId, fetchAllOrders])

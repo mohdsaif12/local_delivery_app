@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { useCartStore } from '@/store/cart'
 import { Plus, Minus, X, Heart, Star, Clock, Search } from 'lucide-react'
@@ -85,10 +85,10 @@ const HERO_FOLDER = 'dishes/hero section photos'
 
 // Shown only if the Storage folder is empty or unreachable.
 const HERO_IMAGES = [
-  '/hero/hero-1.png',
-  '/hero/hero-2.png',
-  '/hero/hero-3.png',
-  '/hero/hero-4.png',
+  '/hero/hero-1.webp',
+  '/hero/hero-2.webp',
+  '/hero/hero-3.webp',
+  '/hero/hero-4.webp',
 ]
 
 function getCategoryEmoji(category: string) {
@@ -294,6 +294,8 @@ function MenuItemCard({ item, onClick, restaurantOpen }: MenuItemCardProps) {
             <img
               src={item.photo_url}
               alt={item.name}
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover"
               onError={(e) => {
                 (e.target as HTMLElement).style.display = 'none';
@@ -339,31 +341,50 @@ export default function MenuPage() {
 
   const supabase = createClient()
 
-  useEffect(() => {
-    let cancelled = false
+  const fetchProducts = useCallback(async (attempt = 0) => {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id,name,description,price,photo_url,is_available,is_veg,category,created_at,variants,sort_order')
+      .eq('is_available', true)
+      .order('sort_order', { ascending: true, nullsFirst: false })
 
-    async function loadProducts(attempt = 0) {
-      const { data, error } = await supabase
-        .from('products')
-        .select('id,name,description,price,photo_url,is_available,is_veg,category,created_at,variants')
-        .eq('is_available', true)
-        .order('created_at', { ascending: true })
-
-      if (cancelled) return
-
-      // Retry once on a transient failure (e.g. free-tier cold-start statement timeout)
-      if (error && attempt === 0) {
-        setTimeout(() => { if (!cancelled) loadProducts(1) }, 1500)
-        return
-      }
-
-      if (data) setMENU(data)
-      setLoading(false)
+    if (error) {
+      // display_order/position don't exist in the DB — a bad column would 42703
+      // here and wipe the whole menu, so log it and retry once.
+      console.error('[Menu] products fetch failed:', error.message)
+      if (attempt === 0) setTimeout(() => fetchProducts(1), 1500)
+      return
     }
 
-    loadProducts()
-    return () => { cancelled = true }
+    if (data) {
+      // Honour the dashboard's manual ordering (admin moves items up/down),
+      // tie-breaking by created_at so items without a sort_order stay stable.
+      const sorted = [...data].sort((a, b) => {
+        const orderA = a.sort_order ?? 999999
+        const orderB = b.sort_order ?? 999999
+        if (orderA !== orderB) return orderA - orderB
+        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+      })
+      setMENU(sorted)
+    }
+    setLoading(false)
   }, [supabase])
+
+  useEffect(() => {
+    fetchProducts()
+
+    // Realtime subscription: when position/details change in admin dashboard, reflect live
+    const channel = supabase
+      .channel('products-live-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+        fetchProducts()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [fetchProducts, supabase])
 
   // Fetch the live categories the dashboard manages, ordered for display
   useEffect(() => {
