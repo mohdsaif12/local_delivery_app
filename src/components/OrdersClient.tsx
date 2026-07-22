@@ -216,7 +216,7 @@ export default function OrdersClient({ initialOrders, userId }: Props) {
       .select(ORDER_SELECT)
       .eq('customer_id', userId)
       .order('created_at', { ascending: false })
-    if (data) setOrders(data as Order[])
+    if (data) setOrders(data as unknown as Order[])
   }, [userId])
 
   useEffect(() => {
@@ -225,7 +225,7 @@ export default function OrdersClient({ initialOrders, userId }: Props) {
     async function refetchOrder(id: string) {
       const { data } = await supabase
         .from('orders').select(ORDER_SELECT).eq('id', id).single()
-      if (data) setOrders(prev => prev.map(o => o.id === id ? (data as Order) : o))
+      if (data) setOrders(prev => prev.map(o => o.id === id ? (data as unknown as Order) : o))
     }
 
     const channel = supabase
@@ -240,7 +240,7 @@ export default function OrdersClient({ initialOrders, userId }: Props) {
       }, async payload => {
         const { data } = await supabase
           .from('orders').select(ORDER_SELECT).eq('id', payload.new.id as string).single()
-        if (data) setOrders(prev => [data as Order, ...prev])
+        if (data) setOrders(prev => [data as unknown as Order, ...prev])
       })
       // Realtime handles INSERT/UPDATE per-row; the page already seeds
       // initialOrders, so no full refetch on subscribe.

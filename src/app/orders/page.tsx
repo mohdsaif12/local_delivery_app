@@ -61,7 +61,7 @@ export default function OrdersPage() {
         .eq('customer_id', user.id)
         .order('created_at', { ascending: false })
 
-      setOrders((data as Order[]) ?? [])
+      setOrders((data as unknown as Order[]) ?? [])
     }
 
     load()
