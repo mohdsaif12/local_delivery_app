@@ -95,26 +95,31 @@ export async function sendOtp(mobileNumber: string): Promise<SendOtpResult> {
   const data = await res.json()
   console.log('[MC] Send OTP response:', JSON.stringify(data))
 
-  if (!res.ok) {
-    // Token may have expired server-side — invalidate cache and retry once
-    if (res.status === 401) {
-      console.warn('[MC] Token rejected (401), refreshing token and retrying…')
-      cachedToken = null
-      tokenExpiresAt = 0
-      return sendOtp(mobileNumber) // one retry
-    }
-    throw new Error(data?.message ?? `Send OTP failed (${res.status})`)
+  // Token may have expired server-side — invalidate cache and retry once
+  if (!res.ok && res.status === 401) {
+    console.warn('[MC] Token rejected (401), refreshing token and retrying…')
+    cachedToken = null
+    tokenExpiresAt = 0
+    return sendOtp(mobileNumber) // one retry
   }
 
   // Response shape: { data: { verificationId: "..." }, ... }
-  const verificationId: string =
+  const verificationId: string | undefined =
     data?.data?.verificationId ?? data?.verificationId
 
-  if (!verificationId) {
-    throw new Error(`[MC] verificationId not found in response: ${JSON.stringify(data)}`)
+  // Message Central keeps ONE active verification per number. A resend while the
+  // previous OTP is still live comes back as "already exists" — but MC still
+  // returns the active verificationId. Reuse it so the flow continues: the code
+  // already sent to the user is valid. This turns a hard error into a no-op.
+  if (verificationId) {
+    return { verificationId }
   }
 
-  return { verificationId }
+  if (!res.ok) {
+    throw new Error(data?.message ?? `Send OTP failed (${res.status})`)
+  }
+
+  throw new Error(`[MC] verificationId not found in response: ${JSON.stringify(data)}`)
 }
 
 // ── Verify OTP ────────────────────────────────────────────────────────────────

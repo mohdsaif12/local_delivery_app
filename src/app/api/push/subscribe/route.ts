@@ -11,6 +11,13 @@ export async function POST(req: NextRequest) {
     .from('push_subscriptions')
     .upsert({ customer_id: user.id, subscription }, { onConflict: 'customer_id' })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    // The live table also has a UNIQUE(endpoint) (added out-of-band, not in the
+    // migrations). The same browser used by more than one account collides on
+    // endpoint — that device is already subscribed, so treat the duplicate as
+    // success instead of throwing a 500 at the user. (23505 = unique_violation.)
+    if (error.code === '23505') return NextResponse.json({ ok: true, note: 'already subscribed' })
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json({ ok: true })
 }

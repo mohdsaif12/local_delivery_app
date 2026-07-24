@@ -73,83 +73,61 @@ export async function POST(req: NextRequest) {
 
     console.log(`[MC Verify OTP] Verification successful for +91${cleanPhone}`)
 
-    // OTP verified — create or retrieve Supabase user via Admin SDK
+    // OTP verified. Mint a Supabase session server-side via a one-time
+    // magic-link token, which the browser exchanges for a real session — no
+    // passwords anywhere. For type 'magiclink', generateLink also creates the
+    // auth user if none exists and returns the authoritative auth user, so
+    // profiles.id can never desync from auth.users.id (the bug in the old
+    // password-reset flow, which caused "Invalid login credentials").
     const admin = getSupabaseAdmin()
     const syntheticEmail = `${cleanPhone}@phone.walibaba.in`
-    const syntheticPassword = `WaliBaba#${cleanPhone}!2026`
 
-    let userId: string | null = null
+    // Ensure a CONFIRMED auth user exists first. If we let generateLink create
+    // the user, the first token it returns for a brand-new/unconfirmed user is
+    // not a clean magic-link token, so verifyOtp('magiclink') fails with
+    // "otp_expired" on the first try (it only worked on retry once the user
+    // existed). Creating the confirmed user up-front makes the first attempt
+    // deterministic. This is idempotent — an "already registered" error is fine.
+    await admin.auth.admin.createUser({
+      email: syntheticEmail,
+      email_confirm: true,
+      user_metadata: { full_name: name || 'Foodie', phone: cleanPhone, role: 'customer' },
+    })
 
-    // 1. Check if user already exists in profiles table
+    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: syntheticEmail,
+    })
+
+    if (linkErr || !linkData?.properties?.hashed_token || !linkData.user) {
+      console.error('[Verify OTP] generateLink failed:', linkErr)
+      return NextResponse.json(
+        { ok: false, error: linkErr?.message || 'Could not create login session' },
+        { status: 500, headers: CORS_HEADERS }
+      )
+    }
+
+    const userId = linkData.user.id
+
+    // Ensure a profiles row exists, keyed on the authoritative auth id. Preserve
+    // an existing name (login doesn't send one); phone OTP is always a customer.
     const { data: existingProfile } = await admin
       .from('profiles')
-      .select('id, full_name, phone')
-      .eq('phone', cleanPhone)
+      .select('full_name')
+      .eq('id', userId)
       .maybeSingle()
 
-    if (existingProfile) {
-      userId = existingProfile.id
-      if (name && !existingProfile.full_name) {
-        await admin.from('profiles').update({ full_name: name }).eq('id', userId)
-      }
-    }
-
-    // 2. If not found in profiles, try creating in Supabase Auth
-    if (!userId) {
-      const { data: newUser, error: createErr } = await admin.auth.admin.createUser({
-        email: syntheticEmail,
-        password: syntheticPassword,
-        email_confirm: true,
-        user_metadata: {
-          full_name: name || 'Foodie',
-          phone: cleanPhone,
-          role: 'customer',
-        },
-      })
-
-      if (newUser?.user) {
-        userId = newUser.user.id
-      } else if (createErr) {
-        const errStr = (createErr.message || '').toLowerCase()
-        const isAlreadyRegistered =
-          createErr.code === 'email_exists' ||
-          errStr.includes('already registered') ||
-          errStr.includes('already been registered') ||
-          createErr.status === 422
-
-        if (!isAlreadyRegistered) {
-          console.error('[Verify OTP] User creation error:', createErr)
-          return NextResponse.json({ error: createErr.message }, { status: 400, headers: CORS_HEADERS })
-        }
-      }
-    }
-
-    // 3. If userId is still null (user existed in Auth but not in profiles table), find user in Auth
-    if (!userId) {
-      const { data: usersData } = await admin.auth.admin.listUsers({ perPage: 1000 })
-      const foundUser = usersData?.users?.find((u) => u.email === syntheticEmail)
-      if (foundUser) {
-        userId = foundUser.id
-      }
-    }
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Failed to locate or create user account' }, { status: 500, headers: CORS_HEADERS })
-    }
-
-    // 4. Ensure password is set so client signInWithPassword will succeed
-    await admin.auth.admin.updateUserById(userId, { password: syntheticPassword })
-
-    // 5. Ensure profile row exists in database
     await admin.from('profiles').upsert({
       id: userId,
-      full_name: name || 'Foodie',
+      full_name: name || existingProfile?.full_name || 'Foodie',
       phone: cleanPhone,
       role: 'customer',
     })
 
+    // token_hash is single-use and short-lived; the client verifies it
+    // immediately with supabase.auth.verifyOtp({ token_hash, type: 'magiclink' }).
     return NextResponse.json(
-      { ok: true, email: syntheticEmail, password: syntheticPassword, userId },
+      { ok: true, tokenHash: linkData.properties.hashed_token, userId },
       { headers: CORS_HEADERS }
     )
   } catch (err: unknown) {

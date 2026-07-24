@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import * as Sentry from '@sentry/nextjs'
 import { Phone, KeyRound, ArrowRight, RefreshCw, CheckCircle2 } from 'lucide-react'
 
 export default function LoginPage() {
@@ -83,18 +84,21 @@ export default function LoginPage() {
         return
       }
 
-      // 2. Establish official Supabase session in browser
+      // 2. Exchange the server-minted magic-link token for a real session
       const supabase = createClient()
 
-      // Kick out any other device logged in with this account
-      await supabase.auth.signOut({ scope: 'others' })
-
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
+      const { error: signInErr } = await supabase.auth.verifyOtp({
+        token_hash: data.tokenHash,
+        type: 'magiclink',
       })
 
       if (signInErr) {
+        // Gracefully-handled errors don't throw, so Sentry won't auto-capture
+        // this — report it explicitly so a broken login is never invisible.
+        Sentry.captureMessage('OTP verified but session exchange failed', {
+          level: 'error',
+          extra: { message: signInErr.message, status: signInErr.status },
+        })
         toast.error('Verification succeeded, but login failed. Please try again.')
         setLoading(false)
         return
