@@ -201,7 +201,11 @@ function statusLabel(status: OrderStatus, cancelReason: CancelReason) {
   return map[status as Exclude<OrderStatus, 'cancelled'>] ?? status
 }
 
-const ORDER_SELECT = 'id, order_number, status, cancellation_reason, cancelled_at, created_at, delivery_address, total, order_items(quantity, price_at_order, products(name))'
+const ORDER_SELECT = 'id, order_number, status, cancellation_reason, cancelled_at, created_at, accepted_at, ready_at, picked_up_at, delivered_at, delivery_address, total, order_items(quantity, price_at_order, products(name))'
+
+// Compact time-of-day, blank until that stage is reached
+const fmtClock = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''
 
 // ── Main component ───────────────────────────────────────────
 export default function OrdersClient({ initialOrders, userId }: Props) {
@@ -383,6 +387,24 @@ export default function OrdersClient({ initialOrders, userId }: Props) {
                 <span className="text-[10px] text-[#586062]">Total Paid</span>
                 <span className="font-bold text-[#b51c00] text-sm">₹{order.total}</span>
               </div>
+
+              {/* Status timeline — actual times each stage was reached */}
+              {!isCancelled && (order.accepted_at || order.ready_at || order.picked_up_at || order.delivered_at) && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 pt-2 border-t border-[#f3f4f5]">
+                  {order.accepted_at && (
+                    <span className="text-[10px] text-[#586062]">✅ Accepted {fmtClock(order.accepted_at)}</span>
+                  )}
+                  {order.ready_at && (
+                    <span className="text-[10px] text-[#586062]">📦 Ready {fmtClock(order.ready_at)}</span>
+                  )}
+                  {order.picked_up_at && (
+                    <span className="text-[10px] text-[#586062]">🛵 Picked up {fmtClock(order.picked_up_at)}</span>
+                  )}
+                  {order.delivered_at && (
+                    <span className="text-[10px] text-green-700 font-semibold">✓ Delivered {fmtClock(order.delivered_at)}</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )

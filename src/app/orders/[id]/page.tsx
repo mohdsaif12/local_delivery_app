@@ -104,6 +104,10 @@ interface OrderData {
   delivery_latitude: number | null
   delivery_longitude: number | null
   created_at: string
+  accepted_at: string | null
+  ready_at: string | null
+  picked_up_at: string | null
+  delivered_at: string | null
   rider_id: string | null
   eta_minutes: number | null
   unavailable_items: string[] | null
@@ -354,7 +358,8 @@ export default function OrderStatusPage({
       .select(
         `id, order_number, status, payment_status, utr_number, total, delivery_fee,
          cancellation_reason, delivery_address, delivery_latitude, delivery_longitude,
-         created_at, rider_id, eta_minutes, unavailable_items, modified_total,
+         created_at, accepted_at, ready_at, picked_up_at, delivered_at,
+         rider_id, eta_minutes, unavailable_items, modified_total,
          restaurants(latitude, longitude),
          rider:profiles!rider_id(full_name, phone),
          order_items(id, quantity, price_at_order, products(name))`
@@ -524,6 +529,16 @@ export default function OrderStatusPage({
     hour12: true,
   })
 
+  // Actual status-change times recorded by the DB (blank until each stage is reached)
+  const fmtClock = (iso: string | null | undefined) =>
+    iso
+      ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+      : ''
+  const acceptedStr = fmtClock(order.accepted_at)
+  const readyStr = fmtClock(order.ready_at)
+  const pickedStr = fmtClock(order.picked_up_at)
+  const deliveredStr = fmtClock(order.delivered_at)
+
   const statusMessage = isCancelled
     ? order.cancellation_reason === 'customer_requested'
       ? 'You cancelled this order.'
@@ -554,7 +569,9 @@ export default function OrderStatusPage({
     },
     {
       label: 'Order Accepted',
-      desc: 'Restaurant has confirmed and accepted your order',
+      desc: acceptedStr
+        ? `${acceptedStr} · Restaurant confirmed your order`
+        : 'Restaurant has confirmed and accepted your order',
       icon: ThumbsUp,
       color: '#7c3aed',
     },
@@ -569,19 +586,25 @@ export default function OrderStatusPage({
     },
     {
       label: 'Ready for Pickup',
-      desc: 'Food is packed and waiting for the rider',
+      desc: readyStr
+        ? `${readyStr} · Food is packed and ready`
+        : 'Food is packed and waiting for the rider',
       icon: Package,
       color: '#16a34a',
     },
     {
       label: 'Out for Delivery',
-      desc: 'Rider will pick up soon',
+      desc: pickedStr
+        ? `${pickedStr} · Rider picked up your order`
+        : 'Rider will pick up soon',
       icon: Bike,
       color: '#2563eb',
     },
     {
       label: 'Arrived at Home',
-      desc: `Expected by ${etaStr}`,
+      desc: deliveredStr
+        ? `${deliveredStr} · Delivered — enjoy your meal!`
+        : `Expected by ${etaStr}`,
       icon: Compass,
       color: '#15803d',
     },

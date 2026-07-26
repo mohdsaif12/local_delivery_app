@@ -104,6 +104,11 @@ export interface Order {
   total: number
   created_at: string
   cancelled_at: string | null
+  // Per-status timestamps, set by a DB trigger on each status change
+  accepted_at: string | null
+  ready_at: string | null
+  picked_up_at: string | null
+  delivered_at: string | null
   customer?: Pick<Profile, 'full_name' | 'phone'>
   rider?: Pick<Profile, 'full_name' | 'phone'>
   order_items?: OrderItem[]
