@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader'
-import { Navigation, Loader2, ChevronLeft, MapPin } from 'lucide-react'
+import { Navigation, Loader2, ChevronLeft, MapPin, Search, X } from 'lucide-react'
 
 interface Coords {
   lat: number
@@ -43,6 +43,11 @@ export default function MapLocationPicker({
 }: MapLocationPickerProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<google.maps.Map | null>(null)
+  const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null)
+  const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null)
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const skipNextGeocodeRef = useRef(false)
+  const lastGeocodedCoordsRef = useRef<Coords | null>(null)
 
   const [locating, setLocating] = useState(false)
   const [reverseGeocoding, setReverseGeocoding] = useState(false)
@@ -53,15 +58,31 @@ export default function MapLocationPicker({
   const [geocodedAddress, setGeocodedAddress] = useState('')
   const [geocodedPincode, setGeocodedPincode] = useState('')
 
+  const [searchQuery, setSearchQuery] = useState('')
+  const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([])
+
   async function handleReverseGeocode(lat: number, lng: number) {
+    // If coordinate shift is negligible (less than ~5 meters), skip reverse geocoding to save API calls
+    if (lastGeocodedCoordsRef.current) {
+      const dLat = Math.abs(lastGeocodedCoordsRef.current.lat - lat)
+      const dLng = Math.abs(lastGeocodedCoordsRef.current.lng - lng)
+      if (dLat < 0.00005 && dLng < 0.00005) {
+        return
+      }
+    }
+
     setReverseGeocoding(true)
     setError('')
     try {
       const res = await fetch(`/api/geocode?lat=${lat}&lng=${lng}`)
+      if (!res.ok) {
+        throw new Error(`Reverse geocoding failed with status: ${res.status}`)
+      }
       const data = await res.json()
       if (data.status === 'OK' && data.results && data.results.length > 0) {
         const result = data.results[0]
         setGeocodedAddress(result.formatted_address)
+        lastGeocodedCoordsRef.current = { lat, lng }
 
         let pin = ''
         for (const comp of result.address_components) {
@@ -110,6 +131,79 @@ export default function MapLocationPicker({
     )
   }
 
+  function handleSearchInputChange(value: string) {
+    setSearchQuery(value)
+    if (!value.trim()) {
+      setSuggestions([])
+      return
+    }
+
+    if (autocompleteServiceRef.current) {
+      autocompleteServiceRef.current.getPlacePredictions(
+        {
+          input: value,
+          componentRestrictions: { country: 'in' }, // Restrict suggestions to India
+        },
+        (predictions, status) => {
+          if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
+            setSuggestions(predictions)
+          } else {
+            setSuggestions([])
+          }
+        }
+      )
+    }
+  }
+
+  function handleSelectSuggestion(suggestion: google.maps.places.AutocompletePrediction) {
+    setSearchQuery(suggestion.description)
+    setSuggestions([])
+
+    if (placesServiceRef.current && mapInstanceRef.current) {
+      setReverseGeocoding(true)
+      setError('')
+      placesServiceRef.current.getDetails(
+        {
+          placeId: suggestion.place_id,
+          fields: ['geometry', 'formatted_address', 'address_components'],
+        },
+        (place, status) => {
+          setReverseGeocoding(false)
+          if (status === google.maps.places.PlacesServiceStatus.OK && place && place.geometry?.location) {
+            const loc = place.geometry.location
+            const coords = { lat: loc.lat(), lng: loc.lng() }
+
+            skipNextGeocodeRef.current = true
+            mapInstanceRef.current?.panTo(coords)
+            mapInstanceRef.current?.setZoom(17)
+            setCenterCoords(coords)
+
+            setGeocodedAddress(place.formatted_address || '')
+            lastGeocodedCoordsRef.current = coords
+
+            let pin = ''
+            if (place.address_components) {
+              for (const comp of place.address_components) {
+                if (comp.types.includes('postal_code')) {
+                  pin = comp.long_name
+                  break
+                }
+              }
+            }
+            setGeocodedPincode(pin)
+          } else {
+            setError('Could not retrieve details for the selected location.')
+          }
+        }
+      )
+    }
+  }
+
+  function handleClearSearch() {
+    setSearchQuery('')
+    setSuggestions([])
+  }
+
   useEffect(() => {
     let isMounted = true
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY
@@ -117,67 +211,85 @@ export default function MapLocationPicker({
 
     ensureMapsOptions(apiKey)
 
-    Promise.all([importLibrary('maps'), importLibrary('core')]).then(
-      async ([{ Map }]) => {
-        if (!isMounted || !mapRef.current) return
+    Promise.all([
+      importLibrary('maps'),
+      importLibrary('places'),
+      importLibrary('core'),
+    ]).then(async ([{ Map }, { AutocompleteService, PlacesService }]) => {
+      if (!isMounted || !mapRef.current) return
 
-        let startCoords = initialCoords || { lat: 26.4499, lng: 80.3319 } // Kanpur default
+      let startCoords = initialCoords || { lat: 26.4499, lng: 80.3319 } // Kanpur default
 
-        // If no coordinates provided, try to geolocate immediately to save user effort
-        if (!initialCoords && navigator.geolocation) {
-          setLocating(true)
-          try {
-            const position = await new Promise<GeolocationPosition>(
-              (resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, {
-                  timeout: 6000,
-                  enableHighAccuracy: true,
-                })
-              }
-            )
-            startCoords = {
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
+      // If no coordinates provided, try to geolocate immediately to save user effort
+      if (!initialCoords && navigator.geolocation) {
+        setLocating(true)
+        try {
+          const position = await new Promise<GeolocationPosition>(
+            (resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(resolve, reject, {
+                timeout: 6000,
+                enableHighAccuracy: true,
+              })
             }
-          } catch (e) {
-            console.warn('Geolocation check on init failed or timed out:', e)
-          } finally {
-            setLocating(false)
+          )
+          startCoords = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
           }
+        } catch (e) {
+          console.warn('Geolocation check on init failed or timed out:', e)
+        } finally {
+          setLocating(false)
         }
-
-        if (!isMounted) return
-
-        const map = new Map(mapRef.current, {
-          center: startCoords,
-          zoom: 17,
-          disableDefaultUI: true,
-          zoomControl: true, // Google Maps built-in zoom controls
-          gestureHandling: 'greedy',
-          styles: MAP_STYLE,
-        })
-
-        mapInstanceRef.current = map
-
-        map.addListener('dragstart', () => {
-          setIsMapMoving(true)
-        })
-
-        map.addListener('idle', () => {
-          setIsMapMoving(false)
-          const center = map.getCenter()
-          if (center) {
-            const latVal = center.lat()
-            const lngVal = center.lng()
-            setCenterCoords({ lat: latVal, lng: lngVal })
-            handleReverseGeocode(latVal, lngVal)
-          }
-        })
       }
-    )
+
+      if (!isMounted) return
+
+      const map = new Map(mapRef.current, {
+        center: startCoords,
+        zoom: 17,
+        disableDefaultUI: true,
+        zoomControl: true, // Google Maps built-in zoom controls
+        gestureHandling: 'greedy',
+        styles: MAP_STYLE,
+      })
+
+      mapInstanceRef.current = map
+      autocompleteServiceRef.current = new AutocompleteService()
+      placesServiceRef.current = new PlacesService(map)
+
+      map.addListener('dragstart', () => {
+        setIsMapMoving(true)
+      })
+
+      map.addListener('idle', () => {
+        setIsMapMoving(false)
+        const center = map.getCenter()
+        if (center) {
+          const latVal = center.lat()
+          const lngVal = center.lng()
+          setCenterCoords({ lat: latVal, lng: lngVal })
+
+          if (skipNextGeocodeRef.current) {
+            skipNextGeocodeRef.current = false
+            return
+          }
+
+          if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current)
+          }
+          debounceTimerRef.current = setTimeout(() => {
+            handleReverseGeocode(latVal, lngVal)
+          }, 500)
+        }
+      })
+    })
 
     return () => {
       isMounted = false
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -226,6 +338,54 @@ export default function MapLocationPicker({
       <div className="relative flex-1 w-full bg-gray-100 overflow-hidden">
         {/* Map */}
         <div ref={mapRef} className="absolute inset-0 w-full h-full" />
+
+        {/* Search Address Overlay */}
+        <div className="absolute top-4 inset-x-4 z-30 flex flex-col gap-2">
+          <div className="relative flex items-center bg-white rounded-2xl shadow-xl border border-gray-100 px-3.5 h-12">
+            <Search className="size-4 text-gray-400 mr-2 flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="Search delivery location..."
+              value={searchQuery}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
+              className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-400 outline-none font-semibold"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="p-1 rounded-full text-gray-400 hover:bg-gray-100 active:scale-95 transition-all"
+                aria-label="Clear search"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Autocomplete suggestions overlay list */}
+          {suggestions.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-2xl border border-gray-200/80 overflow-hidden flex flex-col max-h-60 overflow-y-auto">
+              {suggestions.map((suggestion) => (
+                <button
+                  key={suggestion.place_id}
+                  type="button"
+                  onClick={() => handleSelectSuggestion(suggestion)}
+                  className="w-full text-left px-4 py-3 hover:bg-red-50/50 flex items-start gap-2.5 border-b border-gray-50 last:border-b-0 active:bg-red-50 transition-colors"
+                >
+                  <MapPin className="size-4 text-[#b51c00] flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-800 truncate">
+                      {suggestion.structured_formatting.main_text}
+                    </p>
+                    <p className="text-xs text-gray-400 truncate mt-0.5">
+                      {suggestion.structured_formatting.secondary_text || suggestion.description}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Floating animated center pin indicator */}
         <div

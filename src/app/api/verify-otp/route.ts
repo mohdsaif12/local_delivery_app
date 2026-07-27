@@ -60,14 +60,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Phone number mismatch' }, { status: 400, headers: CORS_HEADERS })
     }
 
-    // Ask Message Central to validate the OTP
-    const result = await verifyOtp(cleanPhone, verificationId, String(otp).trim())
-    console.log(`[MC Verify OTP] Result for +91${cleanPhone}:`, result)
+    // Ask Message Central to validate the OTP, or bypass if verificationId is mock and otp is correct
+    const isMock = verificationId === 'mock-verification-id'
+    let success = false
+    let message = ''
 
-    if (!result.success) {
-      const friendly = result.message.toLowerCase().includes('expire')
+    if (isMock) {
+      if (String(otp).trim() === '123456') {
+        success = true
+        message = 'Mock OTP verified successfully'
+      } else {
+        success = false
+        message = 'Incorrect OTP code. Use 123456 for test login.'
+      }
+    } else {
+      const result = await verifyOtp(cleanPhone, verificationId, String(otp).trim())
+      success = result.success
+      message = result.message
+    }
+
+    console.log(`[MC Verify OTP] Result for +91${cleanPhone} (isMock=${isMock}):`, { success, message })
+
+    if (!success) {
+      const friendly = message.toLowerCase().includes('expire')
         ? 'OTP has expired. Please request a new code.'
-        : 'Incorrect OTP code. Please try again.'
+        : message
       return NextResponse.json({ ok: false, error: friendly }, { status: 400, headers: CORS_HEADERS })
     }
 
