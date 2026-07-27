@@ -23,8 +23,7 @@ export function haversineKm(
  * Returns null if outside delivery zone (> 10 km).
  */
 export function deliveryFeeFromKm(roadKm: number): number | null {
-  if (roadKm <= 3) return 30
-  if (roadKm <= 6) return 50
-  if (roadKm <= 10) return 80
-  return null
+  if (roadKm > 25) return null
+  if (roadKm <= 3.0) return 30
+  return 30 + Math.round((roadKm - 3.0) * 10)
 }
