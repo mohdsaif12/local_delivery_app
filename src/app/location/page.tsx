@@ -70,6 +70,10 @@ function LocationContent() {
     setLoading(false)
   }, [router])
 
+  useEffect(() => {
+    fetchAddresses()
+  }, [fetchAddresses])
+
   // ── Map Selection View ──
   if (showMapSelect) {
     return (
@@ -88,10 +92,6 @@ function LocationContent() {
       />
     )
   }
-
-  useEffect(() => {
-    fetchAddresses()
-  }, [fetchAddresses])
 
   function field(key: keyof typeof form) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
