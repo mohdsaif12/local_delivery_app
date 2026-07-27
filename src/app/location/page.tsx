@@ -16,6 +16,7 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react'
+import MapLocationPicker from '@/components/MapLocationPicker'
 
 const LABEL_PRESETS = ['Home', 'Work', 'Other']
 
@@ -49,6 +50,7 @@ function LocationContent() {
 
   const [form, setForm] = useState({ label: 'Home', address: '', landmark: '', pincode: '' })
   const [formCoords, setFormCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const [showMapSelect, setShowMapSelect] = useState(false)
 
   const fetchAddresses = useCallback(async () => {
     const supabase = createClient()
@@ -67,6 +69,25 @@ function LocationContent() {
     setAddresses(data ?? [])
     setLoading(false)
   }, [router])
+
+  // ── Map Selection View ──
+  if (showMapSelect) {
+    return (
+      <MapLocationPicker
+        initialCoords={formCoords}
+        onClose={() => setShowMapSelect(false)}
+        onConfirm={(coords, addressText, pincode) => {
+          setFormCoords(coords)
+          setForm((prev) => ({
+            ...prev,
+            address: addressText,
+            pincode: pincode || prev.pincode,
+          }))
+          setShowMapSelect(false)
+        }}
+      />
+    )
+  }
 
   useEffect(() => {
     fetchAddresses()
@@ -349,12 +370,6 @@ function LocationContent() {
             </div>
           )}
 
-          {formCoords && (
-            <div className="bg-green-50 border border-green-200 text-green-700 text-xs rounded-xl px-4 py-3 flex items-center gap-2">
-              <CheckCircle2 className="size-4" />
-              Current GPS location captured — this helps us calculate your delivery fee accurately.
-            </div>
-          )}
 
           <div>
             <p className="text-xs font-bold text-[#586062] mb-2">Save as</p>
@@ -402,20 +417,55 @@ function LocationContent() {
             />
           </div>
 
-          {!formCoords && (
-            <button
-              type="button"
-              onClick={handleUseCurrentLocation}
-              disabled={locating}
-              className="w-full h-11 flex items-center justify-center gap-2 text-sm font-semibold text-[#b51c00] border border-[#ffdad3] bg-[#fff5f3] rounded-lg disabled:opacity-60"
-            >
-              {locating ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Navigation className="size-4" />
-              )}
-              Use my current GPS location
-            </button>
+          {formCoords ? (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl px-4 py-3.5 flex flex-col gap-2">
+              <div className="flex items-center gap-2 font-semibold">
+                <CheckCircle2 className="size-4 text-emerald-600 flex-shrink-0" />
+                <span>GPS coordinates captured ({formCoords.lat.toFixed(5)}, {formCoords.lng.toFixed(5)})</span>
+              </div>
+              <div className="flex gap-3 mt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setShowMapSelect(true)}
+                  className="text-xs text-[#b51c00] font-bold hover:underline"
+                >
+                  Adjust on Map
+                </button>
+                <span className="text-gray-300">|</span>
+                <button
+                  type="button"
+                  onClick={handleUseCurrentLocation}
+                  disabled={locating}
+                  className="text-xs text-[#b51c00] font-bold hover:underline disabled:opacity-50"
+                >
+                  Recapture GPS
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleUseCurrentLocation}
+                disabled={locating}
+                className="h-11 flex items-center justify-center gap-1.5 text-xs font-bold text-[#b51c00] border border-[#ffdad3] bg-[#fff5f3] rounded-xl disabled:opacity-60 hover:bg-[#ffece8] active:scale-[0.98] transition-all"
+              >
+                {locating ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Navigation className="size-3.5 fill-[#b51c00]" />
+                )}
+                Use GPS Location
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMapSelect(true)}
+                className="h-11 flex items-center justify-center gap-1.5 text-xs font-bold text-gray-800 border border-gray-200 bg-white rounded-xl hover:bg-gray-50 active:scale-[0.98] transition-all"
+              >
+                <MapPin className="size-3.5 text-[#b51c00]" />
+                Select on Map
+              </button>
+            </div>
           )}
 
           <button
