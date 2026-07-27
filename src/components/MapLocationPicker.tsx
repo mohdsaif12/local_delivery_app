@@ -206,7 +206,7 @@ export default function MapLocationPicker({
   }
 
   return (
-    <div className="min-h-[100dvh] phone-screen flex flex-col bg-[#f8f9fa] relative select-none">
+    <div className="h-[100dvh] phone-screen flex flex-col bg-[#f8f9fa] relative select-none">
       {/* Header */}
       <header className="bg-white sticky top-0 z-40 px-4 h-14 flex items-center gap-3 border-b border-[#e1e3e4]">
         <button onClick={onClose} className="p-1 -ml-1" aria-label="Go back">
@@ -225,7 +225,7 @@ export default function MapLocationPicker({
       {/* Map Area */}
       <div className="relative flex-1 w-full bg-gray-100 overflow-hidden">
         {/* Map */}
-        <div ref={mapRef} className="w-full h-full" />
+        <div ref={mapRef} className="absolute inset-0 w-full h-full" />
 
         {/* Floating animated center pin indicator */}
         <div
