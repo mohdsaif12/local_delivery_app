@@ -145,7 +145,7 @@ export default function MapLocationPicker({
           componentRestrictions: { country: 'in' }, // Restrict suggestions to India
         },
         (predictions, status) => {
-          if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
+          if (status === 'OK' && predictions) {
             setSuggestions(predictions)
           } else {
             setSuggestions([])
@@ -169,7 +169,7 @@ export default function MapLocationPicker({
         },
         (place, status) => {
           setReverseGeocoding(false)
-          if (status === google.maps.places.PlacesServiceStatus.OK && place && place.geometry?.location) {
+          if (status === 'OK' && place && place.geometry?.location) {
             const loc = place.geometry.location
             const coords = { lat: loc.lat(), lng: loc.lng() }
 
