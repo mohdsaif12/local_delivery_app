@@ -552,7 +552,7 @@ export default function OrderStatusPage({
     : order.status === 'accepted'
     ? 'Great news! Your order has been accepted 🎉'
     : order.status === 'preparing'
-    ? 'Your biryani is being prepared with love!'
+    ? 'Your order is being freshly prepared!'
     : order.payment_status === 'pending_verification'
     ? 'Verifying your UPI payment...'
     : 'We have received your order'
@@ -580,7 +580,7 @@ export default function OrderStatusPage({
       desc:
         order.payment_status === 'pending_verification' && step <= 0
           ? 'Waiting for payment verification'
-          : 'The chef is adding the final touches to your Biryani',
+          : 'The chef is adding the final touches to your order',
       icon: ChefHat,
       color: '#f59e0b',
     },

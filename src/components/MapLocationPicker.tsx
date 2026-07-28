@@ -43,9 +43,8 @@ export default function MapLocationPicker({
 }: MapLocationPickerProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<google.maps.Map | null>(null)
-  const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null)
-  const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null)
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null)
   const skipNextGeocodeRef = useRef(false)
   const lastGeocodedCoordsRef = useRef<Coords | null>(null)
 
@@ -133,69 +132,73 @@ export default function MapLocationPicker({
 
   function handleSearchInputChange(value: string) {
     setSearchQuery(value)
+
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+
     if (!value.trim()) {
       setSuggestions([])
       return
     }
 
-    if (autocompleteServiceRef.current) {
-      autocompleteServiceRef.current.getPlacePredictions(
-        {
-          input: value,
-          componentRestrictions: { country: 'in' }, // Restrict suggestions to India
-        },
-        (predictions, status) => {
-          if (status === 'OK' && predictions) {
-            setSuggestions(predictions)
-          } else {
-            setSuggestions([])
-          }
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/places/autocomplete?input=${encodeURIComponent(value)}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.predictions) {
+          setSuggestions(data.predictions)
+        } else {
+          setSuggestions([])
         }
-      )
-    }
+      } catch (err) {
+        console.error('Error fetching autocomplete suggestions:', err)
+        setSuggestions([])
+      }
+    }, 300)
   }
 
-  function handleSelectSuggestion(suggestion: google.maps.places.AutocompletePrediction) {
+  async function handleSelectSuggestion(suggestion: any) {
     setSearchQuery(suggestion.description)
     setSuggestions([])
 
-    if (placesServiceRef.current && mapInstanceRef.current) {
-      setReverseGeocoding(true)
-      setError('')
-      placesServiceRef.current.getDetails(
-        {
-          placeId: suggestion.place_id,
-          fields: ['geometry', 'formatted_address', 'address_components'],
-        },
-        (place, status) => {
-          setReverseGeocoding(false)
-          if (status === 'OK' && place && place.geometry?.location) {
-            const loc = place.geometry.location
-            const coords = { lat: loc.lat(), lng: loc.lng() }
+    if (!mapInstanceRef.current) return
 
-            skipNextGeocodeRef.current = true
-            mapInstanceRef.current?.panTo(coords)
-            mapInstanceRef.current?.setZoom(17)
-            setCenterCoords(coords)
+    setReverseGeocoding(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/places/details?place_id=${encodeURIComponent(suggestion.place_id)}`)
+      const data = await res.json()
+      setReverseGeocoding(false)
 
-            setGeocodedAddress(place.formatted_address || '')
-            lastGeocodedCoordsRef.current = coords
+      if (data.result && data.result.geometry?.location) {
+        const loc = data.result.geometry.location
+        const coords = { lat: loc.lat ?? loc.lat(), lng: loc.lng ?? loc.lng() }
 
-            let pin = ''
-            if (place.address_components) {
-              for (const comp of place.address_components) {
-                if (comp.types.includes('postal_code')) {
-                  pin = comp.long_name
-                  break
-                }
-              }
+        skipNextGeocodeRef.current = true
+        mapInstanceRef.current?.panTo(coords)
+        mapInstanceRef.current?.setZoom(17)
+        setCenterCoords(coords)
+
+        setGeocodedAddress(data.result.formatted_address || suggestion.description)
+        lastGeocodedCoordsRef.current = coords
+
+        let pin = ''
+        if (data.result.address_components) {
+          for (const comp of data.result.address_components) {
+            if (comp.types.includes('postal_code')) {
+              pin = comp.long_name
+              break
             }
-            setGeocodedPincode(pin)
-          } else {
-            setError('Could not retrieve details for the selected location.')
           }
         }
-      )
+        setGeocodedPincode(pin)
+      } else {
+        setError('Could not retrieve details for the selected location.')
+      }
+    } catch (err) {
+      console.error('Error fetching place details:', err)
+      setReverseGeocoding(false)
+      setError('Could not retrieve details for the selected location.')
     }
   }
 
@@ -213,9 +216,8 @@ export default function MapLocationPicker({
 
     Promise.all([
       importLibrary('maps'),
-      importLibrary('places'),
       importLibrary('core'),
-    ]).then(async ([{ Map }, { AutocompleteService, PlacesService }]) => {
+    ]).then(async ([{ Map }]) => {
       if (!isMounted || !mapRef.current) return
 
       let startCoords = initialCoords || { lat: 26.4499, lng: 80.3319 } // Kanpur default
@@ -255,8 +257,6 @@ export default function MapLocationPicker({
       })
 
       mapInstanceRef.current = map
-      autocompleteServiceRef.current = new AutocompleteService()
-      placesServiceRef.current = new PlacesService(map)
 
       map.addListener('dragstart', () => {
         setIsMapMoving(true)
@@ -345,7 +345,7 @@ export default function MapLocationPicker({
             <Search className="size-4 text-gray-400 mr-2 flex-shrink-0" />
             <input
               type="text"
-              placeholder="Search delivery location..."
+              placeholder="Search area, locality or street…"
               value={searchQuery}
               onChange={(e) => handleSearchInputChange(e.target.value)}
               className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-400 outline-none font-semibold"
@@ -364,7 +364,7 @@ export default function MapLocationPicker({
 
           {/* Autocomplete suggestions overlay list */}
           {suggestions.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-2xl border border-gray-200/80 overflow-hidden flex flex-col max-h-60 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl border border-gray-200/80 overflow-hidden flex flex-col max-h-64 overflow-y-auto">
               {suggestions.map((suggestion) => (
                 <button
                   key={suggestion.place_id}
@@ -383,6 +383,16 @@ export default function MapLocationPicker({
                   </div>
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Drag hint — shown only when no suggestions are open */}
+          {suggestions.length === 0 && (
+            <div className="flex items-center gap-1.5 bg-black/50 self-start rounded-full px-3 py-1.5 backdrop-blur-sm">
+              <span className="text-base leading-none">👆</span>
+              <p className="text-[11px] font-semibold text-white leading-none">
+                Drag map to move pin
+              </p>
             </div>
           )}
         </div>

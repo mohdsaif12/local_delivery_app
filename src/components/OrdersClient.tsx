@@ -40,7 +40,7 @@ function statusIndex(status: OrderStatus): number {
 // ── Animated Stepper ─────────────────────────────────────────
 // • Initial render: instantly lit up to current step (no animation)
 // • When status advances via realtime: game-loading animation for NEW step only
-function AnimatedOrderStepper({ status }: { status: OrderStatus }) {
+function AnimatedOrderStepper({ status, times }: { status: OrderStatus; times?: (string | null)[] }) {
   const current = statusIndex(status)
   const numLines = STATUS_STEPS.length - 1
 
@@ -171,6 +171,13 @@ function AnimatedOrderStepper({ status }: { status: OrderStatus }) {
               >
                 {step.label}
               </span>
+
+              {/* Actual time this stage was reached (blank until reached) */}
+              {times?.[i] ? (
+                <span className="text-[8px] font-medium text-[#586062] mt-0.5 text-center leading-none">
+                  {times[i]}
+                </span>
+              ) : null}
             </div>
           )
         })}
@@ -333,6 +340,13 @@ export default function OrdersClient({ initialOrders, userId }: Props) {
               <div className="px-4 pb-2">
                 <AnimatedOrderStepper
                   status={order.status as OrderStatus}
+                  times={[
+                    fmtClock(order.accepted_at) || null,   // Accepted
+                    fmtClock(order.accepted_at) || null,   // Preparing (same timestamp, no separate field)
+                    fmtClock(order.ready_at) || null,      // Ready
+                    fmtClock(order.picked_up_at) || null,  // Out for Delivery
+                    fmtClock(order.delivered_at) || null,  // Delivered
+                  ]}
                 />
               </div>
             )}
@@ -388,23 +402,6 @@ export default function OrdersClient({ initialOrders, userId }: Props) {
                 <span className="font-bold text-[#b51c00] text-sm">₹{order.total}</span>
               </div>
 
-              {/* Status timeline — actual times each stage was reached */}
-              {!isCancelled && (order.accepted_at || order.ready_at || order.picked_up_at || order.delivered_at) && (
-                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 pt-2 border-t border-[#f3f4f5]">
-                  {order.accepted_at && (
-                    <span className="text-[10px] text-[#586062]">✅ Accepted {fmtClock(order.accepted_at)}</span>
-                  )}
-                  {order.ready_at && (
-                    <span className="text-[10px] text-[#586062]">📦 Ready {fmtClock(order.ready_at)}</span>
-                  )}
-                  {order.picked_up_at && (
-                    <span className="text-[10px] text-[#586062]">🛵 Picked up {fmtClock(order.picked_up_at)}</span>
-                  )}
-                  {order.delivered_at && (
-                    <span className="text-[10px] text-green-700 font-semibold">✓ Delivered {fmtClock(order.delivered_at)}</span>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         )
