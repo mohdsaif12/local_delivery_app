@@ -132,14 +132,14 @@ export default function SignupPage() {
         </div>
 
         <div className="flex flex-col items-center justify-center z-10 animate-in fade-in zoom-in-95 duration-500">
-          <div className="w-36 h-36 rounded-full bg-white flex items-center justify-center mb-6 shadow-xl shadow-red-100/50 border border-red-50/50">
+          <div className="mb-6">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Wali Baba Foods" className="w-24 h-24 object-contain animate-pulse" />
+            <img src="/logo.png" alt="Wali Baba Foods" className="w-32 h-32 object-contain drop-shadow-xl animate-pulse" />
           </div>
 
           <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Wali Baba Foods</h2>
-          <p className="text-xs text-gray-400 mt-1 font-semibold italic text-center">
-            The Royal Taste of Tradition
+          <p className="text-xs text-[#c0392b] mt-1 font-bold italic text-center">
+            Taste of Kanpur
           </p>
 
           <div className="mt-8 bg-red-50/80 px-4 py-2 rounded-2xl border border-red-100/30 flex items-center gap-2">

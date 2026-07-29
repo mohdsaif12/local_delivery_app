@@ -43,18 +43,13 @@ export default function WelcomePage() {
           transition: 'opacity 0.6s ease, transform 0.6s ease',
         }}
       >
-        {/* Logo circle */}
-        <div
-          className="w-44 h-44 rounded-full bg-white flex items-center justify-center mb-8"
-          style={{
-            boxShadow: '0 12px 50px rgba(192,57,43,0.12), 0 4px 16px rgba(0,0,0,0.06)',
-          }}
-        >
+        {/* Transparent logo PNG (no white background box) */}
+        <div className="mb-6 flex items-center justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/logo.png"
             alt="Wali Baba Foods"
-            className="w-32 h-32 object-contain drop-shadow-lg"
+            className="w-40 h-40 object-contain drop-shadow-xl"
           />
         </div>
 
@@ -64,8 +59,8 @@ export default function WelcomePage() {
         </h1>
 
         {/* Tagline */}
-        <p className="mt-2 text-base text-gray-400 italic text-center font-medium">
-          The Royal Taste of Tradition
+        <p className="mt-2 text-base text-[#c0392b] italic text-center font-bold tracking-wide">
+          Taste of Kanpur
         </p>
       </div>
 
