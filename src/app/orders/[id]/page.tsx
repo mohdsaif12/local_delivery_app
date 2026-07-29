@@ -634,6 +634,7 @@ export default function OrderStatusPage({
           <div className="relative w-full h-52 overflow-hidden flex-shrink-0">
             <LiveMap
               orderId={order.id}
+              riderId={order.rider_id}
               restaurantCoords={restaurantCoords}
               customerCoords={customerCoords}
             />

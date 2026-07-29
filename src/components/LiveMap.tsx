@@ -11,6 +11,7 @@ interface Coords {
 
 interface LiveMapProps {
   orderId: string
+  riderId: string | null
   restaurantCoords: Coords | null
   customerCoords: Coords | null
 }
@@ -38,7 +39,7 @@ const MAP_STYLE: google.maps.MapTypeStyle[] = [
   { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#e3e3e3' }] },
 ]
 
-export default function LiveMap({ orderId, restaurantCoords, customerCoords }: LiveMapProps) {
+export default function LiveMap({ orderId, riderId, restaurantCoords, customerCoords }: LiveMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const riderMarkerRef = useRef<any>(null)
@@ -151,41 +152,54 @@ export default function LiveMap({ orderId, restaurantCoords, customerCoords }: L
       })
       riderMarkerRef.current = riderMarker
 
-      // Show rider's last known position immediately, if any
-      const { data } = await supabase
-        .from('rider_locations')
-        .select('latitude, longitude')
-        .eq('order_id', orderId)
-        .maybeSingle()
+      // rider_locations is keyed one-row-per-rider (rider_id UNIQUE), not
+      // per-order — a rider keeps reporting position while idle/between
+      // deliveries too, with `order_id` set to whichever order (if any)
+      // they're currently on. Filtering on rider_id is what's actually
+      // unique; order_id is an extra check so the marker hides itself once
+      // this rider has moved on to a different delivery.
+      if (riderId) {
+        const { data } = await supabase
+          .from('rider_locations')
+          .select('latitude, longitude, order_id')
+          .eq('rider_id', riderId)
+          .maybeSingle()
 
-      if (data && isMounted) {
-        const pos = { lat: data.latitude, lng: data.longitude }
-        riderMarker.setPosition(pos)
-        riderMarker.setVisible(true)
-        bounds.extend(pos)
-        map.fitBounds(bounds, 50)
+        if (data && data.order_id === orderId && isMounted) {
+          const pos = { lat: data.latitude, lng: data.longitude }
+          riderMarker.setPosition(pos)
+          riderMarker.setVisible(true)
+          bounds.extend(pos)
+          map.fitBounds(bounds, 50)
+        }
+
+        if (!isMounted) return
+
+        channel = supabase
+          .channel(`rider-location-${riderId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'rider_locations',
+              filter: `rider_id=eq.${riderId}`,
+            },
+            (payload) => {
+              const row = payload.new as { latitude?: number; longitude?: number; order_id?: string | null } | null
+              if (!row?.latitude || !row?.longitude) return
+              if (row.order_id !== orderId) {
+                // Rider has moved on to a different delivery (or gone idle) —
+                // their position is no longer relevant to this order.
+                riderMarker.setVisible(false)
+                return
+              }
+              riderMarker.setPosition({ lat: row.latitude, lng: row.longitude })
+              riderMarker.setVisible(true)
+            }
+          )
+          .subscribe()
       }
-
-      if (!isMounted) return
-
-      channel = supabase
-        .channel(`rider-location-${orderId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'rider_locations',
-            filter: `order_id=eq.${orderId}`,
-          },
-          (payload) => {
-            const row = payload.new as { latitude?: number; longitude?: number } | null
-            if (!row?.latitude || !row?.longitude) return
-            riderMarker.setPosition({ lat: row.latitude, lng: row.longitude })
-            riderMarker.setVisible(true)
-          }
-        )
-        .subscribe()
     })
 
     return () => {
@@ -193,7 +207,7 @@ export default function LiveMap({ orderId, restaurantCoords, customerCoords }: L
       if (channel) supabase.removeChannel(channel)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId, restaurantKey, customerKey])
+  }, [orderId, riderId, restaurantKey, customerKey])
 
   if (!process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY) {
     return (
