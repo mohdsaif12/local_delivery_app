@@ -676,6 +676,16 @@ export default function OrderStatusPage({
                 </p>
               </div>
             )}
+            {(order.delivery_address as { payment?: string } | null)?.payment === 'cod' && !isCancelled && !isDelivered && (
+              <div className="mt-3 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 text-left">
+                <p className="text-[10px] font-bold text-orange-700 flex items-center gap-1">
+                  💵 Cash on Delivery
+                </p>
+                <p className="text-[10px] text-orange-600 mt-0.5">
+                  Please keep ₹{order.total} ready for the rider.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* ── Modification Request Card ── */}

@@ -614,6 +614,18 @@ export default function DashboardClient({ initialOrders }: Props) {
                 </div>
               )}
 
+              {/* Cash on Delivery — restaurant must collect cash on hand-off */}
+              {(order.delivery_address as { payment?: string } | null)?.payment === 'cod' && (
+                <div className="px-4 pb-3">
+                  <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 flex items-center gap-2">
+                    <span className="text-base">💵</span>
+                    <p className="text-[11px] font-bold text-orange-700">
+                      Cash on Delivery — collect ₹{order.total} on delivery
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Rider info once assigned */}
               {order.rider?.full_name && (
                 <div className="px-4 pb-3">

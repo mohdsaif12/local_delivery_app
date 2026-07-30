@@ -36,6 +36,13 @@ function PaymentOptionsContent() {
   const [copied, setCopied] = useState(false)
   const [utr, setUtr] = useState('')
 
+  // Payment method. COD is unlocked only after the customer has 3 delivered
+  // orders — until then UPI is the only option (prevents no-show abuse).
+  const COD_MIN_ORDERS = 3
+  const [method, setMethod] = useState<'upi' | 'cod'>('upi')
+  const [deliveredCount, setDeliveredCount] = useState(0)
+  const codUnlocked = deliveredCount >= COD_MIN_ORDERS
+
   const [restaurantId, setRestaurantId] = useState<string | null>(null)
   const [upiId, setUpiId] = useState('')
   const [deliveryFee, setDeliveryFee] = useState(66)
@@ -113,6 +120,15 @@ function PaymentOptionsContent() {
         }
       }
 
+      // How many orders has this customer had delivered? COD unlocks at 3.
+      // head:true = count only, no rows transferred (no egress cost).
+      const { count: delivered } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('customer_id', user.id)
+        .eq('status', 'delivered')
+      setDeliveredCount(delivered ?? 0)
+
       setLoading(false)
     }
 
@@ -131,7 +147,10 @@ function PaymentOptionsContent() {
     e.preventDefault()
     if (submittingRef.current || !address) return
 
-    if (!utr.trim()) {
+    // Guard: COD only allowed once unlocked (server also implied by trust rule)
+    const isCod = method === 'cod' && codUnlocked
+
+    if (!isCod && !utr.trim()) {
       toast.error('Please enter your UTR / Transaction ID')
       return
     }
@@ -164,8 +183,11 @@ function PaymentOptionsContent() {
         customer_id: user.id,
         restaurant_id: restaurantId,
         status: 'pending',
-        payment_status: 'pending_verification',
-        utr_number: utr.trim(),
+        // COD has no online payment to verify — mark verified and let the
+        // restaurant collect cash on delivery. UPI stays pending_verification
+        // until the UTR is checked.
+        payment_status: isCod ? 'verified' : 'pending_verification',
+        utr_number: isCod ? null : utr.trim(),
         order_type: 'delivery',
         delivery_address: {
           name: profile?.full_name ?? '',
@@ -173,6 +195,7 @@ function PaymentOptionsContent() {
           address: address.address,
           landmark: address.landmark ?? undefined,
           pincode: address.pincode,
+          payment: isCod ? 'cod' : 'upi',
         },
         delivery_fee: deliveryFee,
         delivery_latitude: address.latitude,
@@ -288,56 +311,104 @@ function PaymentOptionsContent() {
 
         <p className="text-[11px] font-bold text-[#9ea3a5] uppercase tracking-wide">Preferred Payment</p>
 
-        <div className="bg-white rounded-xl p-4 border-2 border-[#b51c00]" style={{ boxShadow: '0 2px 8px rgba(45,52,54,0.06)' }}>
-          <div className="flex items-center justify-between mb-3">
+        {/* ── UPI option ── */}
+        <div
+          onClick={() => setMethod('upi')}
+          className={`bg-white rounded-xl p-4 border-2 cursor-pointer ${method === 'upi' ? 'border-[#b51c00]' : 'border-[#e1e3e4]'}`}
+          style={{ boxShadow: '0 2px 8px rgba(45,52,54,0.06)' }}
+        >
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-[#ffdad3] flex items-center justify-center">
                 <span className="text-sm">💳</span>
               </div>
               <span className="text-sm font-bold text-[#191c1d]">Pay via UPI</span>
             </div>
-            <div className="w-5 h-5 rounded-full bg-[#b51c00] flex items-center justify-center">
-              <div className="w-2 h-2 rounded-full bg-white" />
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${method === 'upi' ? 'bg-[#b51c00]' : 'border-2 border-[#cfd3d4]'}`}>
+              {method === 'upi' && <div className="w-2 h-2 rounded-full bg-white" />}
             </div>
           </div>
 
-          {/* UPI ID box */}
-          <div className="bg-[#f3f4f5] rounded-xl px-4 py-3 flex items-center justify-between mb-3">
-            <div>
-              <p className="text-[10px] font-semibold text-[#586062] uppercase tracking-wide mb-0.5">UPI ID</p>
-              <p className="text-[15px] font-bold text-[#191c1d] font-mono">{upiId || '—'}</p>
+          {method === 'upi' && (
+            <div className="mt-3">
+              {/* UPI ID box */}
+              <div className="bg-[#f3f4f5] rounded-xl px-4 py-3 flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-[10px] font-semibold text-[#586062] uppercase tracking-wide mb-0.5">UPI ID</p>
+                  <p className="text-[15px] font-bold text-[#191c1d] font-mono">{upiId || '—'}</p>
+                </div>
+                {upiId && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); copyUpiId() }}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-[#b51c00] active:opacity-60 transition-opacity"
+                  >
+                    {copied ? <CheckCircle2 className="size-4" /> : <Copy className="size-4" />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                )}
+              </div>
+
+              <p className="text-xs text-[#586062] mb-3 leading-relaxed">
+                Open <strong className="text-[#191c1d]">GPay</strong> or{' '}
+                <strong className="text-[#191c1d]">PhonePe</strong> → send{' '}
+                <strong className="text-[#191c1d]">₹{total}</strong> to the UPI ID above → open
+                transaction history → copy the <strong className="text-[#191c1d]">UTR / Transaction ID</strong>
+              </p>
+
+              <Input
+                placeholder="Enter UTR / Transaction ID"
+                value={utr}
+                onChange={(e) => setUtr(e.target.value)}
+                required
+                inputMode="numeric"
+                onClick={(e) => e.stopPropagation()}
+                className="h-11 rounded-lg bg-[#f3f4f5] border-none text-sm focus-visible:ring-1 focus-visible:ring-[#b51c00] font-mono tracking-wider"
+              />
+              <p className="text-[10px] text-[#586062] mt-2 leading-snug">
+                Your order will be confirmed once we verify the payment — usually within 2 minutes.
+              </p>
             </div>
-            {upiId && (
-              <button
-                type="button"
-                onClick={copyUpiId}
-                className="flex items-center gap-1.5 text-xs font-semibold text-[#b51c00] active:opacity-60 transition-opacity"
-              >
-                {copied ? <CheckCircle2 className="size-4" /> : <Copy className="size-4" />}
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            )}
-          </div>
-
-          <p className="text-xs text-[#586062] mb-3 leading-relaxed">
-            Open <strong className="text-[#191c1d]">GPay</strong> or{' '}
-            <strong className="text-[#191c1d]">PhonePe</strong> → send{' '}
-            <strong className="text-[#191c1d]">₹{total}</strong> to the UPI ID above → open
-            transaction history → copy the <strong className="text-[#191c1d]">UTR / Transaction ID</strong>
-          </p>
-
-          <Input
-            placeholder="Enter UTR / Transaction ID"
-            value={utr}
-            onChange={(e) => setUtr(e.target.value)}
-            required
-            inputMode="numeric"
-            className="h-11 rounded-lg bg-[#f3f4f5] border-none text-sm focus-visible:ring-1 focus-visible:ring-[#b51c00] font-mono tracking-wider"
-          />
-          <p className="text-[10px] text-[#586062] mt-2 leading-snug">
-            Your order will be confirmed once we verify the payment — usually within 2 minutes.
-          </p>
+          )}
         </div>
+
+        {/* ── Cash on Delivery option (unlocks after 3 delivered orders) ── */}
+        {codUnlocked ? (
+          <div
+            onClick={() => setMethod('cod')}
+            className={`bg-white rounded-xl p-4 border-2 cursor-pointer ${method === 'cod' ? 'border-[#b51c00]' : 'border-[#e1e3e4]'}`}
+            style={{ boxShadow: '0 2px 8px rgba(45,52,54,0.06)' }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-[#ffe9c7] flex items-center justify-center">
+                  <span className="text-sm">💵</span>
+                </div>
+                <div>
+                  <span className="text-sm font-bold text-[#191c1d]">Cash on Delivery</span>
+                  <p className="text-[10px] text-[#586062]">Pay ₹{total} in cash when your order arrives</p>
+                </div>
+              </div>
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${method === 'cod' ? 'bg-[#b51c00]' : 'border-2 border-[#cfd3d4]'}`}>
+                {method === 'cod' && <div className="w-2 h-2 rounded-full bg-white" />}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-[#f3f4f5] rounded-xl p-4 border-2 border-dashed border-[#d5d8da]">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[#e1e3e4] flex items-center justify-center flex-shrink-0">
+                <span className="text-sm">🔒</span>
+              </div>
+              <div>
+                <span className="text-sm font-bold text-[#586062]">Cash on Delivery</span>
+                <p className="text-[10px] text-[#586062] leading-snug">
+                  Unlocks after {COD_MIN_ORDERS} delivered orders · you have {deliveredCount}/{COD_MIN_ORDERS}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </form>
 
       {/* Sticky bottom pay button */}
@@ -347,7 +418,7 @@ function PaymentOptionsContent() {
           form="payment-form"
           className="w-full h-14 bg-[#b51c00] text-white font-bold rounded-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
         >
-          Pay ₹{total} via UPI
+          {method === 'cod' && codUnlocked ? `Place Order · Pay ₹${total} on delivery` : `Pay ₹${total} via UPI`}
         </button>
       </div>
     </div>
