@@ -26,7 +26,7 @@ export default async function OrderSuccessPage({
 
   const shortId = `#${id.slice(0, 8).toUpperCase()}`
   const addr = order.delivery_address as { address?: string; name?: string; payment?: string } | null
-  const paymentLabel = addr?.payment === 'card' ? 'Credit/Debit Card' : 'Cash on Delivery'
+  const paymentLabel = addr?.payment === 'cod' ? 'Cash on Delivery' : 'Paid via UPI'
 
   return (
     <div className="min-h-[100dvh] phone-screen flex flex-col bg-[#f7f8fa] text-gray-900 pb-safe">

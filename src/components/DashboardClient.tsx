@@ -193,6 +193,8 @@ function AcceptOrderModal({
     .filter((i) => unavailable.has(i.id!))
     .reduce((sum, i) => sum + (i.price_at_order ?? 0) * (i.quantity ?? 1), 0)
   const modifiedTotal = order.total - removedTotal
+  // COD has no online payment to check — nothing to "verify" here.
+  const isCod = (order.delivery_address as { payment?: string } | null)?.payment === 'cod'
 
   function handleConfirm() {
     if (unavailable.size === 0) {
@@ -280,6 +282,8 @@ function AcceptOrderModal({
               ? 'Processing…'
               : unavailable.size > 0
               ? `Notify Customer (₹${modifiedTotal})`
+              : isCod
+              ? 'Accept Order'
               : 'Verify & Accept Order'}
           </button>
           <button onClick={onClose} disabled={isLoading} className="w-full h-10 text-sm font-semibold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors">
@@ -555,6 +559,8 @@ export default function DashboardClient({ initialOrders }: Props) {
           const isBusy = updating === order.id
           const canCancel = ['pending', 'accepted', 'preparing'].includes(order.status)
           const cancelReason = (order as Order & { cancellation_reason?: CancelReason }).cancellation_reason
+          // COD has no online payment to check — nothing to "verify" here.
+          const isCod = (order.delivery_address as { payment?: string } | null)?.payment === 'cod'
 
           return (
             <div key={order.id} className={`bg-white rounded-2xl shadow-sm border-l-4 ${borderClass} overflow-hidden`}>
@@ -615,7 +621,7 @@ export default function DashboardClient({ initialOrders }: Props) {
               )}
 
               {/* Cash on Delivery — restaurant must collect cash on hand-off */}
-              {(order.delivery_address as { payment?: string } | null)?.payment === 'cod' && (
+              {isCod && (
                 <div className="px-4 pb-3">
                   <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 flex items-center gap-2">
                     <span className="text-base">💵</span>
@@ -692,7 +698,7 @@ export default function DashboardClient({ initialOrders }: Props) {
                     onClick={() => setAcceptingOrderId(order.id)}
                     disabled={isBusy}
                   >
-                    {isBusy ? 'Verifying…' : 'Verify Payment & Accept'}
+                    {isBusy ? (isCod ? 'Accepting…' : 'Verifying…') : isCod ? 'Accept Order' : 'Verify Payment & Accept'}
                   </Button>
                 )}
                 {order.status === 'pending' && order.unavailable_items && (
