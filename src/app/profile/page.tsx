@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { MapPin, Search, ChevronRight, CreditCard, History, HelpCircle, LogOut, X, Phone, User as UserIcon, Mail, MessageSquareWarning } from 'lucide-react'
+import { MapPin, Search, ChevronRight, CreditCard, History, HelpCircle, LogOut, X, Phone, User as UserIcon, Mail, MessageSquareWarning, Camera } from 'lucide-react'
 import BottomNav from '@/components/BottomNav'
+import { compressImage } from '@/lib/compressImage'
 import { toast } from 'sonner'
 
 export default function ProfilePage() {
@@ -19,6 +20,10 @@ export default function ProfilePage() {
   const [editName, setEditName] = useState('')
   const [editPhone, setEditPhone] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Profile photo
+  const [avatarUrl, setAvatarUrl] = useState('')
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
   // Custom modal states
   const [activeModal, setActiveModal] = useState<'payment' | 'support' | null>(null)
@@ -36,7 +41,7 @@ export default function ProfilePage() {
       // Fetch profile row
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('full_name, email, phone')
+        .select('full_name, email, phone, avatar_url')
         .eq('id', currentUser.id)
         .maybeSingle()
 
@@ -50,11 +55,13 @@ export default function ProfilePage() {
         full_name: currentUser.user_metadata?.full_name || 'Elena Rodriguez',
         email: currentUser.email,
         phone: currentUser.user_metadata?.phone || '+1 (555) 012-3456',
+        avatar_url: '',
       }
 
       setProfile(finalProfile)
       setEditName(finalProfile.full_name || '')
       setEditPhone(finalProfile.phone || '')
+      setAvatarUrl(finalProfile.avatar_url || '')
       setOrderCount(count || 0)
       setLoading(false)
     }
@@ -67,6 +74,46 @@ export default function ProfilePage() {
     toast.success('Logged out successfully')
     router.push('/login')
     router.refresh()
+  }
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file later
+    if (!file || !user) return
+
+    setUploadingAvatar(true)
+    const supabase = createClient()
+    try {
+      // Avatars are small — resize hard to 512px and store as WebP
+      const compressed = await compressImage(file, { maxWidth: 512 })
+      const ext = compressed.name.split('.').pop() || 'webp'
+      // Path MUST start with the user's id — the storage policy only lets a
+      // user write into their own folder (avatars/<uid>/...).
+      const path = `${user.id}/${crypto.randomUUID()}.${ext}`
+
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(path, compressed, { contentType: compressed.type, upsert: true, cacheControl: '31536000' })
+      if (upErr) throw upErr
+
+      const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path)
+      const url = pub.publicUrl
+
+      // Persist immediately so the photo sticks even without hitting "Save"
+      const { error: dbErr } = await supabase
+        .from('profiles')
+        .update({ avatar_url: url })
+        .eq('id', user.id)
+      if (dbErr) throw dbErr
+
+      setAvatarUrl(url)
+      setProfile((prev: any) => ({ ...prev, avatar_url: url }))
+      toast.success('Profile photo updated!')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload photo')
+    } finally {
+      setUploadingAvatar(false)
+    }
   }
 
   async function handleSaveProfile(e: React.SyntheticEvent) {
@@ -89,6 +136,7 @@ export default function ProfilePage() {
           full_name: editName.trim(),
           email: user.email,
           phone: editPhone.trim(),
+          ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
         })
 
       if (error) throw error
@@ -155,11 +203,16 @@ export default function ProfilePage() {
         {/* Profile Card Info */}
         <div className="flex flex-col items-center pt-6 pb-5">
           <div className="relative">
-            <div className="w-24 h-24 rounded-full bg-orange-100 flex items-center justify-center text-5xl shadow-md border-2 border-white select-none">
-              👩‍🦰
+            <div className="w-24 h-24 rounded-full bg-orange-100 flex items-center justify-center text-5xl shadow-md border-2 border-white select-none overflow-hidden">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarUrl} alt={fullName} className="w-full h-full object-cover" />
+              ) : (
+                '👩‍🦰'
+              )}
             </div>
             {/* Edit pencil badge */}
-            <button 
+            <button
               onClick={() => setIsEditing(true)}
               className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-[#c0392b] text-white flex items-center justify-center shadow-md cursor-pointer border-2 border-white hover:bg-[#a93226] transition-colors"
             >
@@ -267,6 +320,37 @@ export default function ProfilePage() {
             </div>
 
             <form onSubmit={handleSaveProfile} className="space-y-4">
+              {/* Profile photo picker */}
+              <div className="flex flex-col items-center gap-2 pb-1">
+                <div className="relative">
+                  <div className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center text-4xl overflow-hidden border-2 border-white shadow-md select-none">
+                    {avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      '👩‍🦰'
+                    )}
+                  </div>
+                  <label className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-[#c0392b] text-white flex items-center justify-center shadow-md cursor-pointer border-2 border-white hover:bg-[#a93226] transition-colors">
+                    {uploadingAvatar ? (
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Camera className="size-3.5" />
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={uploadingAvatar}
+                      onChange={handleAvatarChange}
+                    />
+                  </label>
+                </div>
+                <span className="text-[10px] text-gray-400 font-semibold">
+                  {uploadingAvatar ? 'Uploading…' : 'Tap the camera to change photo'}
+                </span>
+              </div>
+
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Full Name</label>
                 <div className="relative">

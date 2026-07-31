@@ -330,6 +330,13 @@ function fmtTime(t?: string): string {
   return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
 
+// Orders auto-cancel if not accepted within 10 minutes of being placed.
+const ACCEPT_TIMEOUT_MS = 10 * 60 * 1000
+function fmtDuration(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
 interface Props {
   initialOrders: Order[]
 }
@@ -341,6 +348,16 @@ export default function DashboardClient({ initialOrders }: Props) {
   const [acceptingOrderId, setAcceptingOrderId] = useState<string | null>(null)
   const [restaurantStatus, setRestaurantStatus] = useState<RestaurantStatus | null>(null)
   const [togglingStatus, setTogglingStatus] = useState(false)
+
+  // Live clock — ticks each second only while an order is still pending, to
+  // drive the "waiting to be accepted / auto-cancels in" timer on the card.
+  const [now, setNow] = useState(() => Date.now())
+  const hasPending = orders.some((o) => o.status === 'pending')
+  useEffect(() => {
+    if (!hasPending) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [hasPending])
 
   // Fetch restaurant open/close status
   useEffect(() => {
@@ -686,6 +703,27 @@ export default function DashboardClient({ initialOrders }: Props) {
                         )}
                       </div>
                     </div>
+                  </div>
+                )
+              })()}
+
+              {/* Awaiting-acceptance timer — counts up until accepted; the order
+                  auto-cancels 10 min after being placed if still not accepted. */}
+              {order.status === 'pending' && (() => {
+                const elapsed = now - new Date(order.created_at).getTime()
+                const remaining = ACCEPT_TIMEOUT_MS - elapsed
+                const urgent = remaining < 2 * 60 * 1000
+                return (
+                  <div className={`mx-4 mb-2 flex items-center gap-2 rounded-xl px-3 py-2 border ${urgent ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                    <span className="text-sm">⏳</span>
+                    <p className={`text-[11px] font-bold ${urgent ? 'text-red-700' : 'text-amber-700'}`}>
+                      Not accepted for <span className="font-mono">{fmtDuration(elapsed)}</span>
+                      {remaining > 0 ? (
+                        <span className="font-medium"> · auto-cancels in {fmtDuration(remaining)}</span>
+                      ) : (
+                        <span className="font-medium"> · cancelling…</span>
+                      )}
+                    </p>
                   </div>
                 )
               })()}
