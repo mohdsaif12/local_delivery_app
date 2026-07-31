@@ -215,28 +215,10 @@ const fmtClock = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''
 
 // ── Main component ───────────────────────────────────────────
-const ACCEPT_TIMEOUT_MS = 10 * 60 * 1000 // restaurant auto-cancel window
-
-// mm:ss from a millisecond duration
-function fmtDuration(ms: number) {
-  const s = Math.max(0, Math.floor(ms / 1000))
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-}
-
 export default function OrdersClient({ initialOrders, userId }: Props) {
   const router = useRouter()
   const [orders, setOrders] = useState<Order[]>(initialOrders)
   const [navigatingId, setNavigatingId] = useState<string | null>(null)
-
-  // Live clock — ticks every second only while an order is still awaiting
-  // acceptance, so the "waiting to be accepted" timer updates in real time.
-  const [now, setNow] = useState(() => Date.now())
-  const hasPending = orders.some((o) => o.status === 'pending')
-  useEffect(() => {
-    if (!hasPending) return
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [hasPending])
 
   const fetchAllOrders = useCallback(async () => {
     const supabase = createClient()
@@ -368,27 +350,6 @@ export default function OrdersClient({ initialOrders, userId }: Props) {
                 />
               </div>
             )}
-
-            {/* Awaiting-acceptance timer — counts up until the restaurant accepts.
-                The restaurant auto-cancels after 10 min if still not accepted. */}
-            {order.status === 'pending' && !isCancelled && (() => {
-              const elapsed = now - new Date(order.created_at).getTime()
-              const remaining = ACCEPT_TIMEOUT_MS - elapsed
-              return (
-                <div className="mx-4 mb-2 flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                  <Clock className="size-3.5 text-amber-600 flex-shrink-0" />
-                  <p className="text-[10px] font-semibold text-amber-700 leading-snug">
-                    Waiting for the restaurant to accept ·{' '}
-                    <span className="font-mono font-bold">{fmtDuration(elapsed)}</span>
-                    {remaining > 0 ? (
-                      <span className="text-amber-500 font-medium"> · auto-cancels in {fmtDuration(remaining)}</span>
-                    ) : (
-                      <span className="text-red-500 font-medium"> · cancelling…</span>
-                    )}
-                  </p>
-                </div>
-              )
-            })()}
 
             {/* Cancelled banner */}
             {isCancelled && (

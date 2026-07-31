@@ -36,6 +36,12 @@ function formatCountdown(ms: number) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
+// mm:ss elapsed, used for the "not accepted yet" count-up on the Order Sent step
+function fmtDuration(ms: number) {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
 type CancelReason =
   | 'item_not_available'
   | 'too_busy'
@@ -561,7 +567,9 @@ export default function OrderStatusPage({
     {
       label: 'Order Sent',
       desc:
-        step > 0
+        order.status === 'pending'
+          ? `Not accepted · ${fmtDuration(now - createdDate.getTime())}`
+          : step > 0
           ? `${createdStr} · We've received your order`
           : "We've received your order",
       icon: Check,
