@@ -154,18 +154,25 @@ export default function LiveMap({ orderId, riderId, restaurantCoords, customerCo
 
       // rider_locations is keyed one-row-per-rider (rider_id UNIQUE), not
       // per-order — a rider keeps reporting position while idle/between
-      // deliveries too, with `order_id` set to whichever order (if any)
-      // they're currently on. Filtering on rider_id is what's actually
-      // unique; order_id is an extra check so the marker hides itself once
-      // this rider has moved on to a different delivery.
+      // deliveries too, and can also carry more than one concurrent active
+      // order (the rider app supports switching focus between them). This
+      // component only ever receives a non-null riderId when THIS order's
+      // rider_id is actually set (see the caller), so any position we get
+      // for that rider_id is genuinely this rider's real location right
+      // now — show it unconditionally rather than cross-checking the
+      // row's `order_id` tag. That tag just reflects whichever order the
+      // rider's own app happens to have focused for GPS-purposes at that
+      // instant, so gating visibility on it made the marker flicker
+      // on/off every time the rider switched focus to their other order,
+      // even though they're still just as responsible for this delivery.
       if (riderId) {
         const { data } = await supabase
           .from('rider_locations')
-          .select('latitude, longitude, order_id')
+          .select('latitude, longitude')
           .eq('rider_id', riderId)
           .maybeSingle()
 
-        if (data && data.order_id === orderId && isMounted) {
+        if (data && isMounted) {
           const pos = { lat: data.latitude, lng: data.longitude }
           riderMarker.setPosition(pos)
           riderMarker.setVisible(true)
@@ -186,14 +193,8 @@ export default function LiveMap({ orderId, riderId, restaurantCoords, customerCo
               filter: `rider_id=eq.${riderId}`,
             },
             (payload) => {
-              const row = payload.new as { latitude?: number; longitude?: number; order_id?: string | null } | null
+              const row = payload.new as { latitude?: number; longitude?: number } | null
               if (!row?.latitude || !row?.longitude) return
-              if (row.order_id !== orderId) {
-                // Rider has moved on to a different delivery (or gone idle) —
-                // their position is no longer relevant to this order.
-                riderMarker.setVisible(false)
-                return
-              }
               riderMarker.setPosition({ lat: row.latitude, lng: row.longitude })
               riderMarker.setVisible(true)
             }
