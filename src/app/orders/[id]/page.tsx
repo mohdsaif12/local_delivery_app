@@ -499,6 +499,14 @@ export default function OrderStatusPage({
   const statusIdx = STATUS_ORDER.indexOf(order.status)
   const showRider = !!order.rider_id
 
+  // Phones are stored as bare 10-digit numbers (see signup) — prefix +91 for the dialer
+  const riderDigits = (order.rider?.phone ?? '').replace(/\D/g, '')
+  const riderTel = riderDigits
+    ? riderDigits.length === 10
+      ? `+91${riderDigits}`
+      : `+${riderDigits}`
+    : null
+
   const isRestaurantCancelled =
     isCancelled &&
     order.cancellation_reason !== 'customer_requested'
@@ -878,9 +886,23 @@ export default function OrderStatusPage({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button className="w-9 h-9 rounded-full bg-[#b51c00] text-white flex items-center justify-center shadow-md">
-                  <Phone className="size-4 fill-white text-white" />
-                </button>
+                {riderTel ? (
+                  <a
+                    href={`tel:${riderTel}`}
+                    aria-label={`Call ${order.rider?.full_name ?? 'rider'}`}
+                    className="w-9 h-9 rounded-full bg-[#b51c00] text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
+                  >
+                    <Phone className="size-4 fill-white text-white" />
+                  </a>
+                ) : (
+                  <button
+                    disabled
+                    aria-label="Rider phone number unavailable"
+                    className="w-9 h-9 rounded-full bg-gray-300 text-white flex items-center justify-center shadow-md cursor-not-allowed"
+                  >
+                    <Phone className="size-4 fill-white text-white" />
+                  </button>
+                )}
                 <button className="w-9 h-9 rounded-full bg-white text-gray-500 border border-gray-200 flex items-center justify-center shadow-sm">
                   <MessageSquare className="size-4" />
                 </button>
