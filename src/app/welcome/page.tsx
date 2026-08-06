@@ -62,6 +62,17 @@ export default function WelcomePage() {
         <p className="mt-2 text-base text-[#c0392b] italic text-center font-bold tracking-wide">
           Taste of Kanpur
         </p>
+
+        {/* Parent brand attribution */}
+        <p
+          className="mt-5 text-[11px] font-semibold text-gray-400 tracking-wide text-center"
+          style={{
+            opacity: mounted ? 1 : 0,
+            transition: 'opacity 0.7s ease 0.3s',
+          }}
+        >
+          A product of Baba Biryani
+        </p>
       </div>
 
       {/* ── Bottom section ── */}
