@@ -31,7 +31,7 @@ export default function WelcomePage() {
 
       {/* ── Top label ── */}
       <div className="flex justify-center pt-14">
-        <span className="text-[11px] font-bold tracking-[0.25em] text-gray-400 uppercase">Since 1999</span>
+        <span className="text-[11px] font-bold tracking-[0.25em] text-gray-400 uppercase">Since 1992</span>
       </div>
 
       {/* ── Center content ── */}
@@ -64,15 +64,23 @@ export default function WelcomePage() {
         </p>
 
         {/* Parent brand attribution */}
-        <p
-          className="mt-5 text-[11px] font-semibold text-gray-400 tracking-wide text-center"
+        <div
+          className="mt-5 flex items-center justify-center gap-1.5"
           style={{
             opacity: mounted ? 1 : 0,
             transition: 'opacity 0.7s ease 0.3s',
           }}
         >
-          A product of Baba Biryani
-        </p>
+          <span className="text-[11px] font-semibold text-gray-400 tracking-wide">
+            A product of Baba Biryani
+          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/baba-biryani-logo.jpg"
+            alt="Baba Biryani"
+            className="h-[18px] w-auto object-contain mix-blend-multiply"
+          />
+        </div>
       </div>
 
       {/* ── Bottom section ── */}

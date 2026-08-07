@@ -89,6 +89,11 @@ export default function NavBar({ role, title, showBack, onSearchClick, isOpen, o
                   : 'Open • 25–35 mins • 0.6 km'}
               </p>
             )}
+            {!showBack && (
+              <p className="text-[10px] text-gray-400 font-medium mt-0.5">
+                A product of Baba Biryani
+              </p>
+            )}
           </div>
         </div>
 
