@@ -79,16 +79,15 @@ export default function WelcomePage() {
           </span>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/baba-biryani-logo.jpg"
+            src="/baba-biryani-logo.png"
             alt="Baba Biryani"
-            /* Sizing is inline, not utility classes: a stale service-worker CSS
-               cache would otherwise render this at its natural 750px width. */
+            /* Sizing is inline, not utility classes: those were not reaching the
+               device, leaving the logo at its natural width. */
             style={{
               height: '34px',
               width: 'auto',
               maxWidth: '60px',
               objectFit: 'contain',
-              mixBlendMode: 'multiply',
             }}
           />
         </div>
