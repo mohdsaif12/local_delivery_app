@@ -162,6 +162,24 @@ export default function LoginPage() {
             Taste of Kanpur
           </p>
 
+          {/* Parent brand attribution — matches the welcome splash */}
+          <div className="mt-4 flex items-center justify-center gap-1.5">
+            <span
+              className="font-semibold text-gray-500 tracking-wide whitespace-nowrap"
+              style={{ fontSize: '15px' }}
+            >
+              A Product of Baba Biryani
+            </span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/baba-biryani-logo.png"
+              alt="Baba Biryani"
+              /* Sizing inline to match the welcome splash, where utility
+                 classes were not reaching the device. */
+              style={{ height: '34px', width: 'auto', maxWidth: '60px', objectFit: 'contain' }}
+            />
+          </div>
+
           <div className="mt-8 bg-red-50/80 px-4 py-2 rounded-2xl border border-red-100/30 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-[#c0392b] animate-ping" />
             <span className="text-[11px] font-extrabold text-[#c0392b]">

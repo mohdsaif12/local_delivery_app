@@ -75,7 +75,7 @@ export default function WelcomePage() {
             className="font-semibold text-gray-600 tracking-wide whitespace-nowrap"
             style={{ fontSize: '15px' }}
           >
-            A product of Baba Biryani
+            A Product of Baba Biryani
           </span>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

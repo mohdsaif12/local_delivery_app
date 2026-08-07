@@ -91,7 +91,7 @@ export default function NavBar({ role, title, showBack, onSearchClick, isOpen, o
             )}
             {!showBack && (
               <p className="text-[10px] text-gray-400 font-medium mt-0.5">
-                A product of Baba Biryani
+                A Product of Baba Biryani
               </p>
             )}
           </div>
