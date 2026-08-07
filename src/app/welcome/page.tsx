@@ -71,14 +71,25 @@ export default function WelcomePage() {
             transition: 'opacity 0.7s ease 0.3s',
           }}
         >
-          <span className="text-[11px] font-semibold text-gray-400 tracking-wide">
+          <span
+            className="font-semibold text-gray-600 tracking-wide whitespace-nowrap"
+            style={{ fontSize: '15px' }}
+          >
             A product of Baba Biryani
           </span>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/baba-biryani-logo.jpg"
             alt="Baba Biryani"
-            className="h-[18px] w-auto object-contain mix-blend-multiply"
+            /* Sizing is inline, not utility classes: a stale service-worker CSS
+               cache would otherwise render this at its natural 750px width. */
+            style={{
+              height: '34px',
+              width: 'auto',
+              maxWidth: '60px',
+              objectFit: 'contain',
+              mixBlendMode: 'multiply',
+            }}
           />
         </div>
       </div>
