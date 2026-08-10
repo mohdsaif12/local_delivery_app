@@ -36,12 +36,8 @@ function PaymentOptionsContent() {
   const [copied, setCopied] = useState(false)
   const [utr, setUtr] = useState('')
 
-  // Payment method. COD is unlocked only after the customer has 3 delivered
-  // orders — until then UPI is the only option (prevents no-show abuse).
-  const COD_MIN_ORDERS = 3
+  // Payment method. Cash on Delivery is available to every customer.
   const [method, setMethod] = useState<'upi' | 'cod'>('upi')
-  const [deliveredCount, setDeliveredCount] = useState(0)
-  const codUnlocked = deliveredCount >= COD_MIN_ORDERS
 
   const [restaurantId, setRestaurantId] = useState<string | null>(null)
   const [upiId, setUpiId] = useState('')
@@ -120,15 +116,6 @@ function PaymentOptionsContent() {
         }
       }
 
-      // How many orders has this customer had delivered? COD unlocks at 3.
-      // head:true = count only, no rows transferred (no egress cost).
-      const { count: delivered } = await supabase
-        .from('orders')
-        .select('id', { count: 'exact', head: true })
-        .eq('customer_id', user.id)
-        .eq('status', 'delivered')
-      setDeliveredCount(delivered ?? 0)
-
       setLoading(false)
     }
 
@@ -147,8 +134,7 @@ function PaymentOptionsContent() {
     e.preventDefault()
     if (submittingRef.current || !address) return
 
-    // Guard: COD only allowed once unlocked (server also implied by trust rule)
-    const isCod = method === 'cod' && codUnlocked
+    const isCod = method === 'cod'
 
     if (!isCod && !utr.trim()) {
       toast.error('Please enter your UTR / Transaction ID')
@@ -372,43 +358,27 @@ function PaymentOptionsContent() {
           )}
         </div>
 
-        {/* ── Cash on Delivery option (unlocks after 3 delivered orders) ── */}
-        {codUnlocked ? (
-          <div
-            onClick={() => setMethod('cod')}
-            className={`bg-white rounded-xl p-4 border-2 cursor-pointer ${method === 'cod' ? 'border-[#b51c00]' : 'border-[#e1e3e4]'}`}
-            style={{ boxShadow: '0 2px 8px rgba(45,52,54,0.06)' }}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-[#ffe9c7] flex items-center justify-center">
-                  <span className="text-sm">💵</span>
-                </div>
-                <div>
-                  <span className="text-sm font-bold text-[#191c1d]">Cash on Delivery</span>
-                  <p className="text-[10px] text-[#586062]">Pay ₹{total} in cash when your order arrives</p>
-                </div>
-              </div>
-              <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${method === 'cod' ? 'bg-[#b51c00]' : 'border-2 border-[#cfd3d4]'}`}>
-                {method === 'cod' && <div className="w-2 h-2 rounded-full bg-white" />}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-[#f3f4f5] rounded-xl p-4 border-2 border-dashed border-[#d5d8da]">
+        {/* ── Cash on Delivery option ── */}
+        <div
+          onClick={() => setMethod('cod')}
+          className={`bg-white rounded-xl p-4 border-2 cursor-pointer ${method === 'cod' ? 'border-[#b51c00]' : 'border-[#e1e3e4]'}`}
+          style={{ boxShadow: '0 2px 8px rgba(45,52,54,0.06)' }}
+        >
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-[#e1e3e4] flex items-center justify-center flex-shrink-0">
-                <span className="text-sm">🔒</span>
+              <div className="w-8 h-8 rounded-full bg-[#ffe9c7] flex items-center justify-center">
+                <span className="text-sm">💵</span>
               </div>
               <div>
-                <span className="text-sm font-bold text-[#586062]">Cash on Delivery</span>
-                <p className="text-[10px] text-[#586062] leading-snug">
-                  Unlocks after {COD_MIN_ORDERS} delivered orders · you have {deliveredCount}/{COD_MIN_ORDERS}
-                </p>
+                <span className="text-sm font-bold text-[#191c1d]">Cash on Delivery</span>
+                <p className="text-[10px] text-[#586062]">Pay ₹{total} in cash when your order arrives</p>
               </div>
             </div>
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${method === 'cod' ? 'bg-[#b51c00]' : 'border-2 border-[#cfd3d4]'}`}>
+              {method === 'cod' && <div className="w-2 h-2 rounded-full bg-white" />}
+            </div>
           </div>
-        )}
+        </div>
       </form>
 
       {/* Sticky bottom pay button */}
@@ -418,7 +388,7 @@ function PaymentOptionsContent() {
           form="payment-form"
           className="w-full h-14 bg-[#b51c00] text-white font-bold rounded-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
         >
-          {method === 'cod' && codUnlocked ? `Place Order · Pay ₹${total} on delivery` : `Pay ₹${total} via UPI`}
+          {method === 'cod' ? `Place Order · Pay ₹${total} on delivery` : `Pay ₹${total} via UPI`}
         </button>
       </div>
     </div>

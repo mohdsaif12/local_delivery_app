@@ -172,10 +172,14 @@ export default function LoginPage() {
             </span>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/baba-biryani-logo.png"
+              src="/baba-biryani-logo-sm.png"
               alt="Baba Biryani"
               /* Sizing inline to match the welcome splash, where utility
-                 classes were not reaching the device. */
+                 classes were not reaching the device. The small variant keeps
+                 this under 9KB — the splash only lasts two seconds, so a heavy
+                 image may never arrive on a slow phone. */
+              width={54}
+              height={34}
               style={{ height: '34px', width: 'auto', maxWidth: '60px', objectFit: 'contain' }}
             />
           </div>

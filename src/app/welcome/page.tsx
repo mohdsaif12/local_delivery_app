@@ -79,8 +79,10 @@ export default function WelcomePage() {
           </span>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/baba-biryani-logo.png"
+            src="/baba-biryani-logo-sm.png"
             alt="Baba Biryani"
+            width={54}
+            height={34}
             /* Sizing is inline, not utility classes: those were not reaching the
                device, leaving the logo at its natural width. */
             style={{
