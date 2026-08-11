@@ -7,7 +7,10 @@ export default function manifest(): MetadataRoute.Manifest {
     description: 'Order food directly from Wali Baba Foods',
     start_url: '/menu',
     display: 'standalone',
-    background_color: '#f8f9fa',
+    // Matches the welcome screen's gradient, so Android's own launch splash
+    // (icon + name, drawn by the OS before our HTML runs) hands over to the
+    // welcome screen without a visible colour jump.
+    background_color: '#fff8f7',
     theme_color: '#b51c00',
     icons: [
       // Square 192 + 512 are required for Android/Chrome to offer install
