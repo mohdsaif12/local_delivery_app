@@ -11,6 +11,7 @@ import AndroidInstallPrompt from '@/components/AndroidInstallPrompt'
 import PushSetup from '@/components/PushSetup'
 import LiveMap from '@/components/LiveMap'
 import { usePushSubscription } from '@/hooks/usePushSubscription'
+import { telHref } from '@/lib/phone'
 import {
   ChevronLeft,
   HelpCircle,
@@ -499,13 +500,7 @@ export default function OrderStatusPage({
   const statusIdx = STATUS_ORDER.indexOf(order.status)
   const showRider = !!order.rider_id
 
-  // Phones are stored as bare 10-digit numbers (see signup) — prefix +91 for the dialer
-  const riderDigits = (order.rider?.phone ?? '').replace(/\D/g, '')
-  const riderTel = riderDigits
-    ? riderDigits.length === 10
-      ? `+91${riderDigits}`
-      : `+${riderDigits}`
-    : null
+  const riderTel = telHref(order.rider?.phone)
 
   const isRestaurantCancelled =
     isCancelled &&

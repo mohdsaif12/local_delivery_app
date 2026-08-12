@@ -7,12 +7,15 @@ import { MapPin, Search, ChevronRight, CreditCard, History, HelpCircle, LogOut, 
 import BottomNav from '@/components/BottomNav'
 import OutletPicker from '@/components/OutletPicker'
 import { useOutlets } from '@/hooks/useOutlets'
+import { outletLabel } from '@/lib/outlets'
+import { telHref, formatPhone } from '@/lib/phone'
 import { compressImage } from '@/lib/compressImage'
 import { toast } from 'sonner'
 
 export default function ProfilePage() {
   const router = useRouter()
   const { outlets, outlet, point, selectOutlet } = useOutlets()
+  const supportTel = telHref(outlet?.phone)
 
   const [user, setUser] = useState<any>(null)
   const [profile, setProfile] = useState<any>(null)
@@ -485,12 +488,16 @@ export default function ProfilePage() {
                     💬 Live Chat Support
                   </button>
                   
-                  <a 
-                    href="tel:+15550123456" 
-                    className="w-full h-11 border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-extrabold rounded-2xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
-                  >
-                    📞 Call Us (+1 (555) 012-3456)
-                  </a>
+                  {/* Calls the outlet the customer is ordering from, so support
+                      reaches the branch that actually has their order. */}
+                  {supportTel && (
+                    <a
+                      href={`tel:${supportTel}`}
+                      className="w-full h-11 border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-extrabold rounded-2xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                    >
+                      📞 Call {outlet ? outletLabel(outlet) : 'Us'} ({formatPhone(outlet?.phone)})
+                    </a>
+                  )}
 
                   <a 
                     href="mailto:support@walibabafoods.com" 
