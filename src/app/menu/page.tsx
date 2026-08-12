@@ -614,11 +614,11 @@ export default function MenuPage() {
 
       {/* Closed banner — wording depends on why we're closed */}
       {closedReason === 'manual' ? (
-        <div className="bg-amber-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-14 z-40">
+        <div className="bg-amber-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-[82px] z-40">
           🔴 {outlet?.closed_reason || 'Temporarily Closed · Back in 1–2 hrs'}
         </div>
       ) : closedReason === 'hours' ? (
-        <div className="bg-red-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-14 z-40">
+        <div className="bg-red-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-[82px] z-40">
           🔴 We&apos;re Closed
           {outlet?.opening_time && ` · Opens at ${formatTime12(outlet.opening_time)}`}
         </div>
@@ -626,7 +626,7 @@ export default function MenuPage() {
 
       {/* Search bar */}
       {searchOpen && (
-        <div className="bg-white sticky top-14 z-40 px-4 py-2 shadow-sm flex items-center gap-2">
+        <div className="bg-white sticky top-[82px] z-40 px-4 py-2 shadow-sm flex items-center gap-2">
           <Search className="size-4 text-gray-400 flex-shrink-0" />
           <input
             ref={searchRef}
@@ -690,7 +690,7 @@ export default function MenuPage() {
         </div>
 
         {/* ── Category Tabs ── */}
-        <div className="bg-white sticky top-14 z-30 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
+        <div className="bg-white sticky top-[82px] z-30 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
           <div
             onMouseDown={handleMouseDown}
             onMouseLeave={handleMouseLeave}

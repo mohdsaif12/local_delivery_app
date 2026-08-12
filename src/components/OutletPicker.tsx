@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, MapPin, Check, X } from 'lucide-react'
 import {
   Outlet,
@@ -40,6 +41,16 @@ export default function OutletPicker({
 }: Props) {
   const [open, setOpen] = useState(false)
 
+  // Don't let the page behind scroll while the sheet is open.
+  useEffect(() => {
+    if (!open) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previous
+    }
+  }, [open])
+
   // A single outlet needs no chooser — show it as plain text.
   const switchable = outlets.length > 1
   const label = selected ? outletLabel(selected) : 'Choose outlet'
@@ -78,36 +89,36 @@ export default function OutletPicker({
       </button>
     )
 
-  return (
-    <>
-      {trigger}
-
-      {open && (
-        <div
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="w-full max-w-[430px] bg-white rounded-t-3xl max-h-[80dvh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+  const sheet = open && (
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 backdrop-blur-sm"
+      onClick={() => setOpen(false)}
+    >
+      {/* Column layout with a min-h-0 scroll area: the list scrolls, the
+          heading stays put, and nothing is stranded under the bottom nav. */}
+      <div
+        className="w-full max-w-[430px] bg-white rounded-t-3xl max-h-[85dvh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex-shrink-0 bg-white px-5 pt-5 pb-3 flex items-center justify-between border-b border-gray-100 rounded-t-3xl">
+          <div>
+            <h3 className="text-base font-extrabold text-gray-900">Choose outlet</h3>
+            <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+              Same menu everywhere · delivery time and fee change
+            </p>
+          </div>
+          <button
+            onClick={() => setOpen(false)}
+            aria-label="Close"
+            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0"
           >
-            <div className="sticky top-0 bg-white px-5 pt-5 pb-3 flex items-center justify-between border-b border-gray-100">
-              <div>
-                <h3 className="text-base font-extrabold text-gray-900">Choose outlet</h3>
-                <p className="text-[11px] text-gray-400 font-medium mt-0.5">
-                  Same menu everywhere · delivery time and fee change
-                </p>
-              </div>
-              <button
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0"
-              >
-                <X className="size-4 text-gray-500" />
-              </button>
-            </div>
+            <X className="size-4 text-gray-500" />
+          </button>
+        </div>
 
-            <div className="p-4 space-y-2">
+        {/* min-h-0 is what actually lets this scroll inside a flex column;
+            the extra bottom padding clears the phone's home indicator. */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 pb-8 space-y-2">
               {ordered.map((o) => {
                 const d = point ? outletDelivery(o, point.lat, point.lng) : null
                 const openNow = isOutletOpen(o, new Date())
@@ -171,10 +182,19 @@ export default function OutletPicker({
                   </button>
                 )
               })}
-            </div>
-          </div>
         </div>
-      )}
+      </div>
+    </div>
+  )
+
+  // The triggers live inside sticky, z-indexed headers, which are their own
+  // stacking contexts — a sheet rendered in place is painted under the bottom
+  // nav whatever its z-index. Portalling to the body escapes that. The sheet
+  // only ever opens from a click, so there is nothing to render on the server.
+  return (
+    <>
+      {trigger}
+      {sheet && typeof document !== 'undefined' ? createPortal(sheet, document.body) : null}
     </>
   )
 }

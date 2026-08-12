@@ -88,7 +88,12 @@ export default function NavBar({
   // Customer nav — matches stitch design
   return (
     <nav className="bg-white sticky top-0 z-40 shadow-[0_1px_8px_rgba(0,0,0,0.06)]">
-      <div className="phone-screen px-4 h-14 flex items-center gap-3">
+      {/* The home header stacks title, outlet, status and the Baba Biryani
+          line — about 72px of text, so the old fixed 56px spilled onto the
+          hero. min-h lets it grow if a phone renders type larger rather than
+          overflowing again. The menu's sticky bars are offset by top-[82px] to
+          sit beneath it; keep the two in step if either changes. */}
+      <div className={`phone-screen px-4 flex items-center gap-3 ${showBack ? 'h-14' : 'min-h-[82px] py-1.5'}`}>
         {/* Back or logo */}
         {showBack ? (
           <button onClick={() => router.back()} className="p-1 -ml-1 flex-shrink-0">
