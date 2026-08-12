@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { MapPin, Search, ChevronRight, CreditCard, History, HelpCircle, LogOut, X, Phone, User as UserIcon, Mail, MessageSquareWarning, Camera } from 'lucide-react'
+import { MapPin, Search, ChevronRight, CreditCard, History, HelpCircle, LogOut, X, Phone, User as UserIcon, Mail, MessageSquareWarning, Camera, Info } from 'lucide-react'
 import BottomNav from '@/components/BottomNav'
 import OutletPicker from '@/components/OutletPicker'
 import { useOutlets } from '@/hooks/useOutlets'
@@ -33,7 +33,7 @@ export default function ProfilePage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
   // Custom modal states
-  const [activeModal, setActiveModal] = useState<'payment' | 'support' | null>(null)
+  const [activeModal, setActiveModal] = useState<'payment' | 'support' | 'about' | null>(null)
 
   useEffect(() => {
     const supabase = createClient()
@@ -277,6 +277,7 @@ export default function ProfilePage() {
             { label: 'Order History', icon: History, color: 'bg-amber-50 text-amber-600 border-amber-100/20', href: '/orders' },
             { label: 'My Complaints', icon: MessageSquareWarning, color: 'bg-orange-50 text-orange-600 border-orange-100/20', href: '/complaints' },
             { label: 'Help & Support', icon: HelpCircle, color: 'bg-cyan-50 text-cyan-600 border-cyan-100/20', onClick: () => setActiveModal('support') },
+            { label: 'About Baba Biryani', icon: Info, color: 'bg-green-50 text-green-700 border-green-100/20', onClick: () => setActiveModal('about') },
             { label: 'Logout', icon: LogOut, color: 'bg-red-50 text-red-600 border-red-100/20', onClick: handleLogout },
           ].map((opt, i) => {
             const Icon = opt.icon
@@ -428,7 +429,11 @@ export default function ProfilePage() {
           <div className="bg-white w-full rounded-t-3xl p-6 pb-8 max-w-[430px] border-t border-gray-100 flex flex-col gap-4 animate-in slide-in-from-bottom duration-250">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <h3 className="text-base font-extrabold text-gray-900">
-                {activeModal === 'payment' ? 'Payment Methods' : 'Help & Support'}
+                {activeModal === 'payment'
+                  ? 'Payment Methods'
+                  : activeModal === 'about'
+                  ? 'About Baba Biryani'
+                  : 'Help & Support'}
               </h3>
               <button 
                 onClick={() => setActiveModal(null)}
@@ -438,7 +443,50 @@ export default function ProfilePage() {
               </button>
             </div>
 
-            {activeModal === 'payment' ? (
+            {activeModal === 'about' ? (
+              <div className="space-y-4">
+                {/* Brand mark — the transparent green logo */}
+                <div className="flex flex-col items-center text-center gap-2 pt-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/baba-biryani-logo.png"
+                    alt="Baba Biryani"
+                    style={{ height: '84px', width: 'auto', maxWidth: '160px', objectFit: 'contain' }}
+                  />
+                  <p className="text-[11px] font-bold text-gray-500 tracking-wide uppercase">
+                    The Authentic Biryani Brand
+                  </p>
+                  <span className="text-[10px] font-extrabold text-green-800 bg-green-50 border border-green-100 px-2.5 py-1 rounded-full">
+                    Since 1990
+                  </span>
+                </div>
+
+                <div className="space-y-3 text-xs text-gray-600 leading-relaxed font-medium">
+                  <p>
+                    Baba Biryani was established in the heart of Kanpur city in 1990, and has been
+                    serving the city ever since.
+                  </p>
+                  <p>
+                    In no time it became a{' '}
+                    <span className="font-bold text-gray-800">&ldquo;Word of Mouth&rdquo;</span> name,
+                    thanks to its unique hidden recipe and preparation with pure Desi Ghee.
+                  </p>
+                  <p>
+                    Baba Becanganj soon became a landmark for everybody craving Chicken Biryani, Bun
+                    Butter and Lassi.
+                  </p>
+                </div>
+
+                <div className="bg-gray-50 rounded-2xl border border-gray-200/60 p-3.5">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">
+                    Part of the family
+                  </p>
+                  <p className="text-xs font-bold text-gray-700">
+                    Wali Baba Foods is a product of Baba Biryani.
+                  </p>
+                </div>
+              </div>
+            ) : activeModal === 'payment' ? (
               <div className="space-y-4">
                 {/* Visual Premium Cards */}
                 <div className="space-y-3">
