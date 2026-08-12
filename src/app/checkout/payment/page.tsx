@@ -5,8 +5,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useCartStore } from '@/store/cart'
 import { createClient } from '@/lib/supabase/client'
-import { haversineKm, deliveryFeeFromKm } from '@/lib/distance'
 import { Input } from '@/components/ui/input'
+import { useOutlets } from '@/hooks/useOutlets'
+import OutletPicker from '@/components/OutletPicker'
+import { outletDelivery } from '@/lib/outlets'
 import { toast } from 'sonner'
 import { ChevronLeft, Copy, CheckCircle2 } from 'lucide-react'
 
@@ -39,9 +41,12 @@ function PaymentOptionsContent() {
   // Payment method. Cash on Delivery is available to every customer.
   const [method, setMethod] = useState<'upi' | 'cod'>('upi')
 
-  const [restaurantId, setRestaurantId] = useState<string | null>(null)
-  const [upiId, setUpiId] = useState('')
-  const [deliveryFee, setDeliveryFee] = useState(66)
+  // The order is placed against the outlet chosen on the menu/checkout, and
+  // pays that outlet's UPI id at that outlet's delivery fee.
+  const { outlet, point, outlets, selectOutlet } = useOutlets()
+  const restaurantId = outlet?.id ?? null
+  const upiId = outlet?.upi_id ?? ''
+
   const [discount, setDiscount] = useState(0)
   const [address, setAddress] = useState<{
     label: string
@@ -51,6 +56,14 @@ function PaymentOptionsContent() {
     latitude: number | null
     longitude: number | null
   } | null>(null)
+
+  // Derived from the outlet, so switching outlet here re-prices the order
+  // before it is placed — and the fee written to the order always matches the
+  // outlet it is written against.
+  const deliveryFee =
+    (outlet && point ? outletDelivery(outlet, point.lat, point.lng).fee : null) ??
+    outlet?.delivery_fee ??
+    66
 
   const subtotal = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0)
   const total = Math.max(0, subtotal + deliveryFee - discount)
@@ -68,40 +81,18 @@ function PaymentOptionsContent() {
         return
       }
 
-      const [{ data: addr }, { data: restaurant }] = await Promise.all([
-        supabase
-          .from('addresses')
-          .select('label, address, landmark, pincode, latitude, longitude')
-          .eq('customer_id', user.id)
-          .eq('is_default', true)
-          .maybeSingle(),
-        supabase.from('restaurants').select('id, delivery_fee, upi_id, latitude, longitude').single(),
-      ])
+      const { data: addr } = await supabase
+        .from('addresses')
+        .select('label, address, landmark, pincode, latitude, longitude')
+        .eq('customer_id', user.id)
+        .eq('is_default', true)
+        .maybeSingle()
 
       if (!addr) {
         router.push('/location?from=checkout')
         return
       }
       setAddress(addr)
-
-      let fee = 66
-      if (restaurant) {
-        setRestaurantId(restaurant.id)
-        setUpiId(restaurant.upi_id ?? '')
-
-        if (
-          addr.latitude != null &&
-          addr.longitude != null &&
-          restaurant.latitude != null &&
-          restaurant.longitude != null
-        ) {
-          const roadKm = haversineKm(restaurant.latitude, restaurant.longitude, addr.latitude, addr.longitude) * 1.3
-          fee = deliveryFeeFromKm(roadKm) ?? restaurant.delivery_fee ?? 66
-        } else {
-          fee = restaurant.delivery_fee ?? 66
-        }
-        setDeliveryFee(fee)
-      }
 
       if (couponCode) {
         const { data: coupon } = await supabase
@@ -133,6 +124,13 @@ function PaymentOptionsContent() {
   async function handlePay(e: React.FormEvent) {
     e.preventDefault()
     if (submittingRef.current || !address) return
+
+    // Never place an order without an outlet — it would land in the dashboard
+    // with no branch to cook it.
+    if (!restaurantId) {
+      toast.error('Please choose an outlet first')
+      return
+    }
 
     const isCod = method === 'cod'
 
@@ -271,6 +269,17 @@ function PaymentOptionsContent() {
         onSubmit={handlePay}
         className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-32"
       >
+        {/* Which outlet is cooking — and, for UPI, which one gets paid */}
+        {outlet && (
+          <OutletPicker
+            outlets={outlets}
+            selected={outlet}
+            point={point}
+            onSelect={selectOutlet}
+            variant="row"
+          />
+        )}
+
         {/* Order total breakdown */}
         <div className="bg-white rounded-xl p-4" style={{ boxShadow: '0 2px 8px rgba(45,52,54,0.06)' }}>
           <div className="space-y-1.5">

@@ -5,11 +5,15 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { MapPin, Search, ChevronRight, CreditCard, History, HelpCircle, LogOut, X, Phone, User as UserIcon, Mail, MessageSquareWarning, Camera } from 'lucide-react'
 import BottomNav from '@/components/BottomNav'
+import OutletPicker from '@/components/OutletPicker'
+import { useOutlets } from '@/hooks/useOutlets'
 import { compressImage } from '@/lib/compressImage'
 import { toast } from 'sonner'
 
 export default function ProfilePage() {
   const router = useRouter()
+  const { outlets, outlet, point, selectOutlet } = useOutlets()
+
   const [user, setUser] = useState<any>(null)
   const [profile, setProfile] = useState<any>(null)
   const [orderCount, setOrderCount] = useState<number>(0)
@@ -188,9 +192,23 @@ export default function ProfilePage() {
     <div className="min-h-[100dvh] phone-screen flex flex-col bg-[#f7f8fa] text-gray-900 pb-safe relative">
       {/* Header */}
       <header className="bg-white sticky top-0 z-40 px-4 h-14 flex items-center justify-between border-b border-gray-100">
-        <div className="flex items-center gap-2 text-[#c0392b]">
-          <MapPin className="size-5" />
-          <span className="font-extrabold text-sm text-gray-800">Tasty Food</span>
+        {/* Outlet chooser — same control as the menu header */}
+        <div className="min-w-0 flex-1">
+          {outlet ? (
+            <OutletPicker
+              outlets={outlets}
+              selected={outlet}
+              point={point}
+              onSelect={selectOutlet}
+              variant="nav"
+              className="!text-sm !font-extrabold"
+            />
+          ) : (
+            <div className="flex items-center gap-2 text-[#c0392b]">
+              <MapPin className="size-5" />
+              <span className="font-extrabold text-sm text-gray-800">Wali Baba Foods</span>
+            </div>
+          )}
         </div>
         <button className="p-1 cursor-pointer">
           <Search className="size-5 text-gray-700" />

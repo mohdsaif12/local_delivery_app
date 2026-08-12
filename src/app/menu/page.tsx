@@ -12,51 +12,12 @@ import IOSInstallPrompt from '@/components/IOSInstallPrompt'
 import AndroidInstallPrompt from '@/components/AndroidInstallPrompt'
 import { Product } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
-
-interface RestaurantSettings {
-  id: string
-  is_open: boolean
-  opening_time: string
-  closing_time: string
-  /** Staff-chosen reason, set by the dashboard on a manual close. Null when open. */
-  closed_reason: string | null
-}
-
+import { useOutlets } from '@/hooks/useOutlets'
 
 function formatTime12(t?: string): string {
   if (!t) return ''
   const [h, m] = t.split(':').map(Number)
   return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
-}
-
-// Why the restaurant isn't taking orders:
-//   'manual' — staff flipped the switch off in the dashboard
-//   'hours'  — outside the configured opening/closing times
-//   null     — open
-type ClosedReason = 'manual' | 'hours' | null
-
-function toMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + (m || 0)
-}
-
-function isWithinHours(s: RestaurantSettings, now: Date): boolean {
-  if (!s.opening_time || !s.closing_time) return true
-  const mins = now.getHours() * 60 + now.getMinutes()
-  const open = toMinutes(s.opening_time)
-  const close = toMinutes(s.closing_time)
-  // Overnight window (e.g. 18:00 → 02:00) wraps past midnight
-  return close > open ? mins >= open && mins < close : mins >= open || mins < close
-}
-
-// Nothing in the database closes the shop on a schedule (the only cron job
-// re-enables individual dishes), so the app enforces the opening hours itself.
-// Order matters: the clock wins, then the manual switch.
-function getClosedReason(s: RestaurantSettings | null, now: Date): ClosedReason {
-  if (!s) return null                          // settings not loaded — assume open
-  if (!isWithinHours(s, now)) return 'hours'   // outside opening hours
-  if (!s.is_open) return 'manual'              // inside hours, but switched off
-  return null
 }
 
 // Mirrors the dashboard's menu categories, in the same order.
@@ -327,7 +288,7 @@ export default function MenuPage() {
   
   const [MENU, setMENU] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
-  const [restaurantSettings, setRestaurantSettings] = useState<RestaurantSettings | null>(null)
+  const { outlets, outlet, point, closedReason, selectOutlet } = useOutlets()
   const [dbCategories, setDbCategories] = useState<Category[]>([])
 
   const [heroImages, setHeroImages] = useState<string[]>(HERO_IMAGES)
@@ -400,30 +361,9 @@ export default function MenuPage() {
       })
   }, [supabase])
 
-  // Fetch restaurant open/close status and subscribe to realtime changes
-  useEffect(() => {
-    supabase.from('restaurants').select('id, is_open, opening_time, closing_time, closed_reason').limit(1).single()
-      .then(({ data }) => { if (data) setRestaurantSettings(data) })
-
-    const ch = supabase.channel('restaurant-open-status')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'restaurants' }, (payload) => {
-        const row = payload.new as RestaurantSettings
-        setRestaurantSettings(row)
-      })
-      .subscribe()
-
-    return () => { supabase.removeChannel(ch) }
-  }, [supabase])
-
-  // Re-check the clock every minute so the banner flips at opening/closing
-  // time without the customer needing to refresh.
-  const [now, setNow] = useState(() => new Date())
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000)
-    return () => clearInterval(id)
-  }, [])
-
-  const closedReason = useMemo(() => getClosedReason(restaurantSettings, now), [restaurantSettings, now])
+  // Open/closed now follows the chosen outlet: each one keeps its own hours and
+  // its own switch. useOutlets subscribes to changes, so a staff member closing
+  // an outlet reaches customers without a refresh.
   const effectivelyOpen = closedReason === null
 
   // Hero images, in priority order:
@@ -657,7 +597,17 @@ export default function MenuPage() {
         }
       ` }} />
 
-      <NavBar role="customer" onSearchClick={openSearch} isOpen={effectivelyOpen} openingTime={restaurantSettings?.opening_time} closedReason={closedReason} />
+      <NavBar
+        role="customer"
+        onSearchClick={openSearch}
+        isOpen={effectivelyOpen}
+        openingTime={outlet?.opening_time ?? undefined}
+        closedReason={closedReason}
+        outlets={outlets}
+        outlet={outlet}
+        point={point}
+        onSelectOutlet={selectOutlet}
+      />
       <PushSetup variant="menu" />
       <IOSInstallPrompt variant="menu" />
       <AndroidInstallPrompt variant="menu" />
@@ -665,12 +615,12 @@ export default function MenuPage() {
       {/* Closed banner — wording depends on why we're closed */}
       {closedReason === 'manual' ? (
         <div className="bg-amber-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-14 z-40">
-          🔴 {restaurantSettings?.closed_reason || 'Temporarily Closed · Back in 1–2 hrs'}
+          🔴 {outlet?.closed_reason || 'Temporarily Closed · Back in 1–2 hrs'}
         </div>
       ) : closedReason === 'hours' ? (
         <div className="bg-red-600 text-white text-center py-2 px-4 text-sm font-bold sticky top-14 z-40">
           🔴 We&apos;re Closed
-          {restaurantSettings?.opening_time && ` · Opens at ${formatTime12(restaurantSettings.opening_time)}`}
+          {outlet?.opening_time && ` · Opens at ${formatTime12(outlet.opening_time)}`}
         </div>
       ) : null}
 

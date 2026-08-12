@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useCartStore } from '@/store/cart'
 import { createClient } from '@/lib/supabase/client'
-import { haversineKm, deliveryFeeFromKm } from '@/lib/distance'
 import { ChevronLeft, ChevronRight, MapPin, Minus, Plus, CreditCard, AlertTriangle, Tag, CheckCircle2 } from 'lucide-react'
+import { useOutlets } from '@/hooks/useOutlets'
+import OutletPicker from '@/components/OutletPicker'
+import { outletDelivery, outletLabel, nearestCoveringOutlet } from '@/lib/outlets'
 
 interface Coupon {
   code: string
@@ -18,14 +20,24 @@ export default function CheckoutPage() {
   const router = useRouter()
   const { items, updateQuantity } = useCartStore()
 
+  const { outlets, outlet, point, selectOutlet } = useOutlets()
+
   const [loading, setLoading] = useState(true)
   const [addressLabel, setAddressLabel] = useState('')
   const [addressText, setAddressText] = useState('')
-  const [deliveryFee, setDeliveryFee] = useState(66)
-  const [distanceKm, setDistanceKm] = useState<number | null>(null)
-  const [outsideZone, setOutsideZone] = useState(false)
+  // Fee, distance and coverage are derived from the chosen outlet, so switching
+  // outlet re-prices the order on the spot with no state to keep in sync.
+  const delivery = outlet && point ? outletDelivery(outlet, point.lat, point.lng) : null
+  const deliveryFee = delivery?.fee ?? outlet?.delivery_fee ?? 66
+  const distanceKm = delivery?.roadKm ?? null
+  const outsideZone = delivery ? !delivery.inRange : false
   const [coupon, setCoupon] = useState<Coupon | null>(null)
   const [couponApplied, setCouponApplied] = useState(false)
+
+  // When the chosen outlet can't reach the address, the nearest one that can.
+  const switchTo =
+    outsideZone && outlet && point ? nearestCoveringOutlet(outlets, outlet.id, point) : null
+  const switchToFee = switchTo && point ? outletDelivery(switchTo, point.lat, point.lng).fee : null
 
   const subtotal = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0)
   const discount = couponApplied && coupon ? coupon.discount_amount : 0
@@ -43,15 +55,12 @@ export default function CheckoutPage() {
         return
       }
 
-      const [{ data: address }, { data: restaurant }] = await Promise.all([
-        supabase
-          .from('addresses')
-          .select('label, address, landmark, pincode, latitude, longitude')
-          .eq('customer_id', user.id)
-          .eq('is_default', true)
-          .maybeSingle(),
-        supabase.from('restaurants').select('id, delivery_fee, latitude, longitude').single(),
-      ])
+      const { data: address } = await supabase
+        .from('addresses')
+        .select('label, address, landmark, pincode, latitude, longitude')
+        .eq('customer_id', user.id)
+        .eq('is_default', true)
+        .maybeSingle()
 
       if (!address) {
         router.push('/location?from=checkout')
@@ -63,37 +72,12 @@ export default function CheckoutPage() {
         `${address.address}${address.landmark ? ', ' + address.landmark : ''} — ${address.pincode}`
       )
 
-      if (restaurant) {
-        if (
-          address.latitude != null &&
-          address.longitude != null &&
-          restaurant.latitude != null &&
-          restaurant.longitude != null
-        ) {
-          const straightKm = haversineKm(
-            restaurant.latitude,
-            restaurant.longitude,
-            address.latitude,
-            address.longitude
-          )
-          const roadKm = straightKm * 1.3
-          const fee = deliveryFeeFromKm(roadKm)
-          if (fee === null) {
-            setOutsideZone(true)
-          } else {
-            setDeliveryFee(fee)
-            setDistanceKm(roadKm)
-          }
-        } else {
-          setDeliveryFee(restaurant.delivery_fee ?? 66)
-        }
-      }
-
       setLoading(false)
     }
 
     load()
   }, [router])
+
 
   // Separate effect, keyed on subtotal — re-checks coupon eligibility once the
   // persisted cart store finishes hydrating (subtotal starts at 0 on first
@@ -164,6 +148,17 @@ export default function CheckoutPage() {
       </Link>
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 pb-4">
+        {/* Which outlet is cooking this order */}
+        {outlet && (
+          <OutletPicker
+            outlets={outlets}
+            selected={outlet}
+            point={point}
+            onSelect={selectOutlet}
+            variant="row"
+          />
+        )}
+
         {/* Coupon banner */}
         {coupon && !outsideZone && (
           <div className="bg-[#fff3ea] border border-[#ffd9b8] rounded-xl p-3.5 flex items-center justify-between gap-3">
@@ -266,11 +261,30 @@ export default function CheckoutPage() {
         {outsideZone && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
             <AlertTriangle className="size-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-bold text-red-700">Outside delivery zone</p>
-              <p className="text-xs text-red-600 mt-0.5">
-                We currently deliver within 10 km. Please choose a closer address.
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-red-700">
+                {outlet ? `${outletLabel(outlet)} doesn't deliver here` : 'Outside delivery zone'}
               </p>
+              {/* Another outlet may well cover this address — offer the switch
+                  rather than sending the customer away. */}
+              {switchTo ? (
+                <>
+                  <p className="text-xs text-red-600 mt-0.5">
+                    {outletLabel(switchTo)} delivers to your address
+                    {switchToFee != null && ` for ₹${switchToFee}`}.
+                  </p>
+                  <button
+                    onClick={() => selectOutlet(switchTo.id)}
+                    className="mt-2 h-9 px-4 bg-[#b51c00] text-white text-xs font-bold rounded-lg"
+                  >
+                    Switch to {outletLabel(switchTo)}
+                  </button>
+                </>
+              ) : (
+                <p className="text-xs text-red-600 mt-0.5">
+                  None of our outlets deliver this far. Please choose a closer address.
+                </p>
+              )}
             </div>
           </div>
         )}

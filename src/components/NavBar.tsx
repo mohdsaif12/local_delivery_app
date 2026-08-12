@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useCartStore } from '@/store/cart'
 import { ChevronLeft, Search, ShoppingCart } from 'lucide-react'
 import Link from 'next/link'
+import OutletPicker from './OutletPicker'
+import { Outlet, outletDelivery, etaMinutesFromKm } from '@/lib/outlets'
 
 interface Props {
   role: 'customer' | 'restaurant'
@@ -15,6 +17,12 @@ interface Props {
   openingTime?: string
   /** Why we're closed: 'manual' = staff switched off, 'hours' = outside opening times */
   closedReason?: 'manual' | 'hours' | null
+  /** Outlet chooser. Supplied by pages that already load outlets, so the header
+   *  and the page can never show different outlets. */
+  outlets?: Outlet[]
+  outlet?: Outlet | null
+  point?: { lat: number; lng: number } | null
+  onSelectOutlet?: (id: string) => void
 }
 
 function formatTime12(timeStr?: string): string {
@@ -25,9 +33,30 @@ function formatTime12(timeStr?: string): string {
   return `${hour12}:${String(m || 0).padStart(2, '0')} ${period}`
 }
 
-export default function NavBar({ role, title, showBack, onSearchClick, isOpen, openingTime, closedReason }: Props) {
+export default function NavBar({
+  role,
+  title,
+  showBack,
+  onSearchClick,
+  isOpen,
+  openingTime,
+  closedReason,
+  outlets = [],
+  outlet = null,
+  point = null,
+  onSelectOutlet,
+}: Props) {
   const router = useRouter()
   const itemCount = useCartStore((s) => s.items.reduce((sum, i) => sum + i.quantity, 0))
+
+  // Real distance and ETA for the chosen outlet. Before multiple outlets this
+  // line was hardcoded to "25–35 mins • 0.6 km" for every customer.
+  const outletStatus = (() => {
+    if (!outlet || !point) return 'Open • 25–35 mins'
+    const { roadKm } = outletDelivery(outlet, point.lat, point.lng)
+    const eta = etaMinutesFromKm(roadKm)
+    return `Open • ${eta.min}–${eta.max} mins${roadKm != null ? ` • ${roadKm.toFixed(1)} km` : ''}`
+  })()
 
   async function handleLogout() {
     const supabase = createClient()
@@ -77,6 +106,19 @@ export default function NavBar({ role, title, showBack, onSearchClick, isOpen, o
             <h1 className="font-extrabold text-gray-900 text-base leading-tight truncate">
               {title ?? 'Wali Baba Foods'}
             </h1>
+
+            {/* Outlet chooser — the customer's "which branch am I ordering from" */}
+            {!showBack && outlet && (
+              <OutletPicker
+                outlets={outlets}
+                selected={outlet}
+                point={point}
+                onSelect={onSelectOutlet ?? (() => {})}
+                variant="nav"
+                className="mt-0.5"
+              />
+            )}
+
             {!showBack && (
               <p className="text-[11px] text-gray-400 font-medium flex items-center gap-1 mt-0.5">
                 <span className={`inline-block w-1.5 h-1.5 rounded-full ${
@@ -86,7 +128,7 @@ export default function NavBar({ role, title, showBack, onSearchClick, isOpen, o
                   ? 'Temporarily closed · Back in 1–2 hrs'
                   : isOpen === false
                   ? openingTime ? `Closed · Opens at ${formatTime12(openingTime)}` : 'Closed'
-                  : 'Open • 25–35 mins • 0.6 km'}
+                  : outletStatus}
               </p>
             )}
             {!showBack && (

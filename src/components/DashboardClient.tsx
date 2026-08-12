@@ -319,6 +319,8 @@ const STATUS_PUSH: Partial<Record<string, { title: string; body: string }>> = {
 
 interface RestaurantStatus {
   id: string
+  name?: string
+  area_name?: string | null
   is_open: boolean
   opening_time: string
   closing_time: string
@@ -347,6 +349,7 @@ export default function DashboardClient({ initialOrders }: Props) {
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null)
   const [acceptingOrderId, setAcceptingOrderId] = useState<string | null>(null)
   const [restaurantStatus, setRestaurantStatus] = useState<RestaurantStatus | null>(null)
+  const [outletList, setOutletList] = useState<RestaurantStatus[]>([])
   const [togglingStatus, setTogglingStatus] = useState(false)
 
   // Live clock — ticks each second only while an order is still pending, to
@@ -359,11 +362,26 @@ export default function DashboardClient({ initialOrders }: Props) {
     return () => clearInterval(id)
   }, [hasPending])
 
-  // Fetch restaurant open/close status
+  // Fetch outlets and their open/close status.
+  //
+  // The dashboard is still single-outlet: it shows every order and toggles one
+  // outlet. With several outlets it now picks the first in display order rather
+  // than whichever row the database happened to return, so the toggle always
+  // acts on a predictable outlet and names it. Per-outlet staff scoping is the
+  // separate dashboard piece.
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('restaurants').select('id, is_open, opening_time, closing_time').limit(1).single()
-      .then(({ data }) => { if (data) setRestaurantStatus(data) })
+    supabase
+      .from('restaurants')
+      .select('id, name, area_name, is_open, opening_time, closing_time')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true })
+      .then(({ data }) => {
+        if (!data?.length) return
+        setOutletList(data)
+        setRestaurantStatus(data[0])
+      })
   }, [])
 
   async function toggleRestaurantOpen() {
@@ -373,8 +391,11 @@ export default function DashboardClient({ initialOrders }: Props) {
     const newVal = !restaurantStatus.is_open
     const { error } = await supabase.from('restaurants').update({ is_open: newVal }).eq('id', restaurantStatus.id)
     if (!error) {
-      setRestaurantStatus({ ...restaurantStatus, is_open: newVal })
-      toast.success(newVal ? '🟢 Restaurant is now Open' : '🔴 Restaurant is now Closed')
+      const updated = { ...restaurantStatus, is_open: newVal }
+      setRestaurantStatus(updated)
+      setOutletList((prev) => prev.map((o) => (o.id === updated.id ? { ...o, is_open: newVal } : o)))
+      const name = restaurantStatus.area_name || restaurantStatus.name || 'Restaurant'
+      toast.success(newVal ? `🟢 ${name} is now Open` : `🔴 ${name} is now Closed`)
     } else {
       toast.error('Failed to update status')
     }
@@ -512,13 +533,36 @@ export default function DashboardClient({ initialOrders }: Props) {
 
   const statusCard = restaurantStatus && (
     <div className={`mb-4 rounded-2xl p-4 border-2 flex items-center justify-between ${restaurantStatus.is_open ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
-      <div>
+      <div className="min-w-0">
         <p className={`text-sm font-extrabold ${restaurantStatus.is_open ? 'text-green-700' : 'text-red-700'}`}>
-          {restaurantStatus.is_open ? '🟢 Restaurant is Open' : '🔴 Restaurant is Closed'}
+          {restaurantStatus.is_open ? '🟢 ' : '🔴 '}
+          {outletList.length > 1
+            ? `${restaurantStatus.area_name || restaurantStatus.name} is ${restaurantStatus.is_open ? 'Open' : 'Closed'}`
+            : restaurantStatus.is_open
+            ? 'Restaurant is Open'
+            : 'Restaurant is Closed'}
         </p>
         <p className="text-[11px] text-gray-400 font-medium mt-0.5">
           Hours: {fmtTime(restaurantStatus.opening_time)} – {fmtTime(restaurantStatus.closing_time)}
         </p>
+
+        {/* With several outlets, be explicit about which one this switch closes. */}
+        {outletList.length > 1 && (
+          <select
+            value={restaurantStatus.id}
+            onChange={(e) => {
+              const next = outletList.find((o) => o.id === e.target.value)
+              if (next) setRestaurantStatus(next)
+            }}
+            className="mt-2 text-[11px] font-bold bg-white border border-gray-200 rounded-lg px-2 py-1 max-w-full"
+          >
+            {outletList.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.area_name || o.name} · {o.is_open ? 'Open' : 'Closed'}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       <button
         onClick={toggleRestaurantOpen}
