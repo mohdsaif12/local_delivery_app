@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { useOutlets } from '@/hooks/useOutlets'
 import OutletPicker from '@/components/OutletPicker'
 import { outletDelivery } from '@/lib/outlets'
+import { COUPON_FIELDS, couponDiscount, isCouponEligible, loadCouponState, type Coupon } from '@/lib/coupons'
 import { toast } from 'sonner'
 import { ChevronLeft, Copy, CheckCircle2 } from 'lucide-react'
 
@@ -47,7 +48,9 @@ function PaymentOptionsContent() {
   const restaurantId = outlet?.id ?? null
   const upiId = outlet?.upi_id ?? ''
 
-  const [discount, setDiscount] = useState(0)
+  // The coupon record is held in state and priced off the live subtotal, so a
+  // percentage offer stays correct once the persisted cart finishes hydrating.
+  const [coupon, setCoupon] = useState<Coupon | null>(null)
   const [address, setAddress] = useState<{
     label: string
     address: string
@@ -66,6 +69,7 @@ function PaymentOptionsContent() {
     66
 
   const subtotal = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0)
+  const discount = couponDiscount(coupon, subtotal)
   const total = Math.max(0, subtotal + deliveryFee - discount)
   const itemsCount = items.reduce((sum, i) => sum + i.quantity, 0)
 
@@ -95,23 +99,26 @@ function PaymentOptionsContent() {
       setAddress(addr)
 
       if (couponCode) {
-        const { data: coupon } = await supabase
+        const { data: found } = await supabase
           .from('coupons')
-          .select('discount_amount, min_order_value')
+          .select(COUPON_FIELDS)
           .eq('code', couponCode)
           .eq('is_active', true)
-          .maybeSingle()
+          .maybeSingle<Coupon>()
 
-        if (coupon && subtotal >= coupon.min_order_value) {
-          setDiscount(coupon.discount_amount)
-        }
+        // Re-check eligibility here too — the code travels in the URL, so a
+        // used-up offer must not survive into a returning customer's order.
+        const allowed =
+          found && isCouponEligible(found, await loadCouponState(supabase, user.id))
+
+        setCoupon(allowed ? found : null)
       }
 
       setLoading(false)
     }
 
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [router, couponCode])
 
   function copyUpiId() {

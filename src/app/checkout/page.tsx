@@ -9,12 +9,7 @@ import { ChevronLeft, ChevronRight, MapPin, Minus, Plus, CreditCard, AlertTriang
 import { useOutlets } from '@/hooks/useOutlets'
 import OutletPicker from '@/components/OutletPicker'
 import { outletDelivery, outletLabel, nearestCoveringOutlet } from '@/lib/outlets'
-
-interface Coupon {
-  code: string
-  discount_amount: number
-  min_order_value: number
-}
+import { bestCoupon, couponLabel, loadCouponState, type Coupon, type CouponState } from '@/lib/coupons'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -32,7 +27,10 @@ export default function CheckoutPage() {
   const distanceKm = delivery?.roadKm ?? null
   const outsideZone = delivery ? !delivery.inRange : false
   const [coupon, setCoupon] = useState<Coupon | null>(null)
+  const [couponDiscountValue, setCouponDiscountValue] = useState(0)
   const [couponApplied, setCouponApplied] = useState(false)
+  // Which offers this customer still has left; null until the check resolves.
+  const [couponState, setCouponState] = useState<CouponState | null>(null)
 
   // When the chosen outlet can't reach the address, the nearest one that can.
   const switchTo =
@@ -40,7 +38,7 @@ export default function CheckoutPage() {
   const switchToFee = switchTo && point ? outletDelivery(switchTo, point.lat, point.lng).fee : null
 
   const subtotal = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0)
-  const discount = couponApplied && coupon ? coupon.discount_amount : 0
+  const discount = couponApplied && coupon ? couponDiscountValue : 0
   const total = outsideZone ? 0 : Math.max(0, subtotal + deliveryFee - discount)
 
   useEffect(() => {
@@ -67,6 +65,8 @@ export default function CheckoutPage() {
         return
       }
 
+      setCouponState(await loadCouponState(supabase, user.id))
+
       setAddressLabel(address.label)
       setAddressText(
         `${address.address}${address.landmark ? ', ' + address.landmark : ''} — ${address.pincode}`
@@ -83,21 +83,20 @@ export default function CheckoutPage() {
   // persisted cart store finishes hydrating (subtotal starts at 0 on first
   // render) and whenever quantities change afterwards.
   useEffect(() => {
-    if (subtotal <= 0) {
-      setCoupon(null)
-      return
+    let cancelled = false
+    const lookup =
+      subtotal <= 0 || couponState === null
+        ? Promise.resolve(null)
+        : bestCoupon(createClient(), subtotal, couponState)
+    lookup.then((best) => {
+      if (cancelled) return
+      setCoupon(best?.coupon ?? null)
+      setCouponDiscountValue(best?.discount ?? 0)
+    })
+    return () => {
+      cancelled = true
     }
-    const supabase = createClient()
-    supabase
-      .from('coupons')
-      .select('code, discount_amount, min_order_value')
-      .eq('is_active', true)
-      .lte('min_order_value', subtotal)
-      .order('discount_amount', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => setCoupon(data ?? null))
-  }, [subtotal])
+  }, [subtotal, couponState])
 
   if (loading) {
     return (
@@ -168,8 +167,8 @@ export default function CheckoutPage() {
               </div>
               <span className="text-xs font-bold text-[#663c14] truncate">
                 {couponApplied
-                  ? `${coupon.code} applied — saved ₹${coupon.discount_amount}`
-                  : `Save ₹${coupon.discount_amount} with code ${coupon.code}`}
+                  ? `${coupon.code} applied — saved ₹${couponDiscountValue}`
+                  : `${couponLabel(coupon)} with code ${coupon.code}`}
               </span>
             </div>
             <button
