@@ -24,7 +24,8 @@ export default function ProfilePage() {
 
   // Edit Profile modal state
   const [isEditing, setIsEditing] = useState(false)
-  const [editName, setEditName] = useState('')
+  const [editFirstName, setEditFirstName] = useState('')
+  const [editLastName, setEditLastName] = useState('')
   const [editPhone, setEditPhone] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -48,7 +49,7 @@ export default function ProfilePage() {
       // Fetch profile row
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('full_name, email, phone, avatar_url')
+        .select('full_name, first_name, last_name, email, phone, avatar_url')
         .eq('id', currentUser.id)
         .maybeSingle()
 
@@ -59,14 +60,19 @@ export default function ProfilePage() {
         .eq('customer_id', currentUser.id)
 
       const finalProfile = profileData || {
-        full_name: currentUser.user_metadata?.full_name || 'Elena Rodriguez',
+        full_name: currentUser.user_metadata?.full_name || '',
+        first_name: currentUser.user_metadata?.first_name || '',
+        last_name: currentUser.user_metadata?.last_name || '',
         email: currentUser.email,
-        phone: currentUser.user_metadata?.phone || '+1 (555) 012-3456',
+        phone: currentUser.user_metadata?.phone || '',
         avatar_url: '',
       }
 
       setProfile(finalProfile)
-      setEditName(finalProfile.full_name || '')
+      // Older accounts only have full_name — split it so the form is never blank.
+      const [firstFromFull, ...restFromFull] = (finalProfile.full_name || '').trim().split(' ')
+      setEditFirstName(finalProfile.first_name || firstFromFull || '')
+      setEditLastName(finalProfile.last_name || restFromFull.join(' ') || '')
       setEditPhone(finalProfile.phone || '')
       setAvatarUrl(finalProfile.avatar_url || '')
       setOrderCount(count || 0)
@@ -125,10 +131,16 @@ export default function ProfilePage() {
 
   async function handleSaveProfile(e: React.SyntheticEvent) {
     e.preventDefault()
-    if (!editName.trim()) {
-      toast.error('Name cannot be empty')
+    if (!editFirstName.trim()) {
+      toast.error('Please enter your first name')
       return
     }
+    if (!editLastName.trim()) {
+      toast.error('Please enter your last name')
+      return
+    }
+
+    const newFullName = `${editFirstName.trim()} ${editLastName.trim()}`
 
     setSaving(true)
     const supabase = createClient()
@@ -140,7 +152,9 @@ export default function ProfilePage() {
         .upsert({
           id: user.id,
           role: 'customer',
-          full_name: editName.trim(),
+          full_name: newFullName,
+          first_name: editFirstName.trim(),
+          last_name: editLastName.trim(),
           email: user.email,
           phone: editPhone.trim(),
           ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
@@ -150,12 +164,19 @@ export default function ProfilePage() {
 
       // Update Auth metadata to sync values
       await supabase.auth.updateUser({
-        data: { full_name: editName.trim(), phone: editPhone.trim() }
+        data: {
+          full_name: newFullName,
+          first_name: editFirstName.trim(),
+          last_name: editLastName.trim(),
+          phone: editPhone.trim(),
+        }
       })
 
       setProfile((prev: any) => ({
         ...prev,
-        full_name: editName.trim(),
+        full_name: newFullName,
+        first_name: editFirstName.trim(),
+        last_name: editLastName.trim(),
         phone: editPhone.trim(),
       }))
       setIsEditing(false)
@@ -176,9 +197,16 @@ export default function ProfilePage() {
     )
   }
 
-  const fullName = profile?.full_name || 'Elena Rodriguez'
-  const email = profile?.email || user?.email || 'elena.rodriguez@example.com'
-  const phone = profile?.phone || '+1 (555) 012-3456'
+  // Prefer the split names; fall back to full_name for accounts created before
+  // signup started asking for both.
+  const fullName =
+    [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') ||
+    profile?.full_name ||
+    'Add your name'
+  // Phone signups get a synthetic @phone.walibaba.in address — never show it.
+  const rawEmail = profile?.email || user?.email || ''
+  const email = rawEmail.endsWith('@phone.walibaba.in') ? '' : rawEmail
+  const phone = profile?.phone ? formatPhone(profile.phone) : ''
 
   // Dynamic loyalty tier logic
   let loyaltyTier = 'Bronze Foodie'
@@ -245,11 +273,14 @@ export default function ProfilePage() {
           <h2 className="text-lg font-extrabold text-gray-900 mt-4 leading-tight">
             {fullName}
           </h2>
-          <p className="text-xs text-gray-400 font-medium mt-1">
-            {email}
-          </p>
+          {email && (
+            <p className="text-xs text-gray-400 font-medium mt-1">
+              {email}
+            </p>
+          )}
           <div className={`mt-2.5 px-3.5 py-1 rounded-full text-[10px] font-extrabold tracking-wide ${tierColor}`}>
-            {loyaltyTier} • {phone}
+            {loyaltyTier}
+            {phone && ` • ${phone}`}
           </div>
         </div>
 
@@ -373,16 +404,31 @@ export default function ProfilePage() {
                 </span>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Full Name</label>
-                <div className="relative">
-                  <UserIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">First Name</label>
+                  <div className="relative">
+                    <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={editFirstName}
+                      onChange={(e) => setEditFirstName(e.target.value)}
+                      className="w-full h-11 pl-9 pr-3 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-bold focus:outline-none focus:border-[#c0392b] focus:bg-white transition-all"
+                      placeholder="First name"
+                      autoComplete="given-name"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Last Name</label>
                   <input
                     type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="w-full h-11 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-bold focus:outline-none focus:border-[#c0392b] focus:bg-white transition-all"
-                    placeholder="Enter your name"
+                    value={editLastName}
+                    onChange={(e) => setEditLastName(e.target.value)}
+                    className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-bold focus:outline-none focus:border-[#c0392b] focus:bg-white transition-all"
+                    placeholder="Last name"
+                    autoComplete="family-name"
                     required
                   />
                 </div>

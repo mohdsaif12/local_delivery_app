@@ -12,13 +12,15 @@ In Supabase → SQL Editor, run in order (both are safe to re-run):
 ```
 supabase/migrations/024_percent_coupons.sql
 supabase/migrations/025_once_per_customer_coupons.sql
+supabase/migrations/026_names_and_coupon_list.sql
 ```
 
 `024` adds percentage offers (`discount_percent`, `max_discount`) and the
 `first_order_only` flag. `025` adds `once_per_customer`, a `description` field,
-the redemption index, seeds the two live welcome offers, and — importantly —
-gives the `restaurant` role full read/write on `coupons` so the dashboard UI can
-manage them.
+the redemption index, and — importantly — gives the `restaurant` role full
+read/write on `coupons` so the dashboard UI can manage them. `026` adds
+`sort_order` (which drives the customer's coupon list) and seeds the live
+line-up, plus `first_name` / `last_name` on `profiles`.
 
 ---
 
@@ -35,6 +37,7 @@ manage them.
 | `once_per_customer` | `true` = each customer may redeem this code exactly once. |
 | `is_active` | The on/off switch. `false` hides it from every customer instantly. |
 | `description` | Optional banner text. If empty the app generates one, e.g. "10% off up to ₹100". |
+| `sort_order` | Position in the customer's coupon list. Lowest shows first — and is the one applied by default. |
 
 A row is either **flat** (`discount_amount > 0`, `discount_percent NULL`) or
 **percentage** (`discount_percent` 1–100 **and** `max_discount > 0`). The
@@ -43,16 +46,20 @@ fails loudly rather than silently discounting ₹0.
 
 ### Currently live
 
-| Code | Offer | Rule |
-|---|---|---|
-| `WELCOME10` | 10% off, capped at ₹100, min order ₹100 | once per customer |
-| `SAVE50` | Flat ₹50 off, min order ₹299 | once per customer |
-| `FLAT50` | old flat ₹50 | deactivated by `024` |
+| Code | Offer | Min order | Rule | `sort_order` |
+|---|---|---|---|---|
+| `WELCOME10` | 10% off, capped at ₹100 | ₹100 | once per customer | 10 |
+| `SAVE50` | Flat ₹50 off | ₹349 | once per customer | 20 |
+| `SAVE100` | Flat ₹100 off | ₹699 | once per customer | 30 |
+| `FLAT50` | old flat ₹50 | — | deactivated by `024` | — |
 
-A brand-new customer therefore gets **both** offers — one per order, best-value
-first — and after both are spent they see nothing until the admin runs a new one.
-Example journey: ₹400 order → `SAVE50` −₹50; ₹1200 order → `WELCOME10` −₹100;
-every order after → no offer.
+Every threshold is the **food subtotal**. The delivery fee is never discounted
+and never counts towards `min_order_value`.
+
+Each customer can use all three — one per order, each once. `WELCOME10` has the
+lowest `sort_order`, so it is what shows applied before they open the coupon
+sheet, exactly as asked. To make an offer repeatable, set
+`once_per_customer = false` on its row.
 
 ---
 
@@ -64,17 +71,22 @@ should not duplicate it.
 1. `loadCouponState(supabase, customerId)` — one query over the customer's
    orders returning `{ firstOrder, usedCodes }`. **Redemptions are read from
    `orders.coupon_code`**; there is no separate ledger table.
-2. `bestCoupon(supabase, subtotal, state)` — fetches active coupons where
-   `min_order_value <= subtotal`, drops the ones this customer has used up
-   (`isCouponEligible`), prices each with `couponDiscount()`, returns the one
-   that saves the most.
-3. `couponDiscount(coupon, subtotal)` — percentage offers are floored and capped
+2. `listCoupons(supabase, subtotal, state)` — every active coupon this customer
+   still owns, in `sort_order`. Offers whose minimum the cart hasn't reached are
+   included but marked `available: false` with a reason ("Add ₹49 more to
+   unlock"), so the sheet can show them locked. Offers they can never use again
+   are dropped entirely.
+3. `defaultOffer(offers)` — the first *available* offer in list order, **not**
+   the largest. That is what gets auto-applied until the customer picks
+   something else from the sheet.
+4. `couponDiscount(coupon, subtotal)` — percentage offers are floored and capped
    at `max_discount`; no offer ever exceeds the subtotal.
 
-Consumed by [checkout/page.tsx](src/app/checkout/page.tsx) (the banner and the
-Apply button) and [checkout/payment/page.tsx](src/app/checkout/payment/page.tsx),
-which re-validates before writing `coupon_code` and `discount_amount` onto the
-order — a customer pasting `?coupon=SAVE50` a second time gets ₹0.
+The UI is [CouponSheet.tsx](src/components/CouponSheet.tsx), opened from the
+coupon row in [checkout/page.tsx](src/app/checkout/page.tsx).
+[checkout/payment/page.tsx](src/app/checkout/payment/page.tsx) re-validates the
+code before writing `coupon_code` and `discount_amount` onto the order — a
+customer pasting `?coupon=SAVE50` a second time gets ₹0.
 
 **Only one coupon applies per order.** Offers do not stack.
 
@@ -93,7 +105,9 @@ RLS already permits it for `role = 'restaurant'`.
 ### List view
 Every coupon, active first. Per row: code, a human summary of the offer
 (reuse `couponLabel()` from `src/lib/coupons.ts`), min order, the usage rule,
-an active/inactive toggle, and Edit / Delete.
+an active/inactive toggle, and Edit / Delete. Sort the list by `sort_order` —
+that is the order customers see, and the top eligible row is the one applied by
+default, so it is worth making obvious in the UI.
 
 The toggle should write `is_active` directly — that is the admin's fastest lever
 for stopping an offer that is costing too much.
@@ -105,7 +119,8 @@ Offer type              [ Flat ₹ off | % off ]
   if Flat:  Amount ₹    number > 0                       → discount_amount
   if %:     Percent     number 1–100                     → discount_percent
             Max ₹ off   number > 0                       → max_discount
-Minimum order ₹         number ≥ 0                       → min_order_value
+Minimum order ₹         number ≥ 0 (food subtotal)       → min_order_value
+List position           number, lowest shows first       → sort_order
 Who can use it          [ Everyone, every order
                         | New customers only (first order)   → first_order_only
                         | Once per customer ]                → once_per_customer

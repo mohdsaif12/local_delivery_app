@@ -21,7 +21,7 @@ export async function OPTIONS() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { phone, otp, sessionId, name } = await req.json()
+    const { phone, otp, sessionId, name, firstName, lastName } = await req.json()
     if (!phone || !otp || !sessionId) {
       return NextResponse.json({ error: 'Phone, OTP, and sessionId are required' }, { status: 400, headers: CORS_HEADERS })
     }
@@ -108,7 +108,13 @@ export async function POST(req: NextRequest) {
     await admin.auth.admin.createUser({
       email: syntheticEmail,
       email_confirm: true,
-      user_metadata: { full_name: name || 'Foodie', phone: cleanPhone, role: 'customer' },
+      user_metadata: {
+        full_name: name || 'Foodie',
+        first_name: firstName ?? null,
+        last_name: lastName ?? null,
+        phone: cleanPhone,
+        role: 'customer',
+      },
     })
 
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
@@ -130,13 +136,15 @@ export async function POST(req: NextRequest) {
     // an existing name (login doesn't send one); phone OTP is always a customer.
     const { data: existingProfile } = await admin
       .from('profiles')
-      .select('full_name')
+      .select('full_name, first_name, last_name')
       .eq('id', userId)
       .maybeSingle()
 
     await admin.from('profiles').upsert({
       id: userId,
       full_name: name || existingProfile?.full_name || 'Foodie',
+      first_name: firstName || existingProfile?.first_name || null,
+      last_name: lastName || existingProfile?.last_name || null,
       phone: cleanPhone,
       role: 'customer',
     })

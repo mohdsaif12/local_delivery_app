@@ -9,7 +9,16 @@ import { ChevronLeft, ChevronRight, MapPin, Minus, Plus, CreditCard, AlertTriang
 import { useOutlets } from '@/hooks/useOutlets'
 import OutletPicker from '@/components/OutletPicker'
 import { outletDelivery, outletLabel, nearestCoveringOutlet } from '@/lib/outlets'
-import { bestCoupon, couponLabel, loadCouponState, type Coupon, type CouponState } from '@/lib/coupons'
+import {
+  couponDiscount,
+  couponLabel,
+  defaultOffer,
+  listCoupons,
+  loadCouponState,
+  type CouponOffer,
+  type CouponState,
+} from '@/lib/coupons'
+import CouponSheet from '@/components/CouponSheet'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -26,9 +35,13 @@ export default function CheckoutPage() {
   const deliveryFee = delivery?.fee ?? outlet?.delivery_fee ?? 66
   const distanceKm = delivery?.roadKm ?? null
   const outsideZone = delivery ? !delivery.inRange : false
-  const [coupon, setCoupon] = useState<Coupon | null>(null)
-  const [couponDiscountValue, setCouponDiscountValue] = useState(0)
-  const [couponApplied, setCouponApplied] = useState(false)
+  // Every offer this customer still owns, in the order the admin set.
+  const [offers, setOffers] = useState<CouponOffer[]>([])
+  // The applied code. Null before the list loads, then the first eligible offer
+  // (the 10% one) unless the customer picks another from the sheet.
+  const [appliedCode, setAppliedCode] = useState<string | null>(null)
+  const [touchedCoupon, setTouchedCoupon] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
   // Which offers this customer still has left; null until the check resolves.
   const [couponState, setCouponState] = useState<CouponState | null>(null)
 
@@ -38,7 +51,10 @@ export default function CheckoutPage() {
   const switchToFee = switchTo && point ? outletDelivery(switchTo, point.lat, point.lng).fee : null
 
   const subtotal = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0)
-  const discount = couponApplied && coupon ? couponDiscountValue : 0
+  const applied = offers.find((o) => o.coupon.code === appliedCode && o.available) ?? null
+  // Priced off the live subtotal, so editing quantities re-prices the coupon —
+  // and always off the food subtotal, never the delivery fee.
+  const discount = applied ? couponDiscount(applied.coupon, subtotal) : 0
   const total = outsideZone ? 0 : Math.max(0, subtotal + deliveryFee - discount)
 
   useEffect(() => {
@@ -86,17 +102,22 @@ export default function CheckoutPage() {
     let cancelled = false
     const lookup =
       subtotal <= 0 || couponState === null
-        ? Promise.resolve(null)
-        : bestCoupon(createClient(), subtotal, couponState)
-    lookup.then((best) => {
+        ? Promise.resolve([] as CouponOffer[])
+        : listCoupons(createClient(), subtotal, couponState)
+    lookup.then((list) => {
       if (cancelled) return
-      setCoupon(best?.coupon ?? null)
-      setCouponDiscountValue(best?.discount ?? 0)
+      setOffers(list)
+      // Auto-apply the top offer until the customer chooses for themselves,
+      // then respect their pick — re-validating it as the cart changes.
+      setAppliedCode((prev) => {
+        if (!touchedCoupon) return defaultOffer(list)?.coupon.code ?? null
+        return list.some((o) => o.coupon.code === prev && o.available) ? prev : null
+      })
     })
     return () => {
       cancelled = true
     }
-  }, [subtotal, couponState])
+  }, [subtotal, couponState, touchedCoupon])
 
   if (loading) {
     return (
@@ -158,30 +179,30 @@ export default function CheckoutPage() {
           />
         )}
 
-        {/* Coupon banner */}
-        {coupon && !outsideZone && (
-          <div className="bg-[#fff3ea] border border-[#ffd9b8] rounded-xl p-3.5 flex items-center justify-between gap-3">
+        {/* Coupon row — opens the full list, Swiggy-style */}
+        {offers.length > 0 && !outsideZone && (
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="w-full bg-[#fff3ea] border border-[#ffd9b8] rounded-xl p-3.5 flex items-center justify-between gap-3 text-left"
+          >
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-full bg-[#ffe2c2] flex items-center justify-center flex-shrink-0">
                 <Tag className="size-4 text-[#9c5a1f]" />
               </div>
               <span className="text-xs font-bold text-[#663c14] truncate">
-                {couponApplied
-                  ? `${coupon.code} applied — saved ₹${couponDiscountValue}`
-                  : `${couponLabel(coupon)} with code ${coupon.code}`}
+                {applied
+                  ? `${applied.coupon.code} applied — saved ₹${discount}`
+                  : `${couponLabel(offers[0].coupon)} · ${offers.length} coupon${
+                      offers.length > 1 ? 's' : ''
+                    } available`}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => setCouponApplied((prev) => !prev)}
-              className={`px-4 h-8 text-xs font-bold rounded-lg flex-shrink-0 flex items-center gap-1 ${
-                couponApplied ? 'bg-emerald-600 text-white' : 'bg-[#4a3b1e] text-white'
-              }`}
-            >
-              {couponApplied && <CheckCircle2 className="size-3.5" />}
-              {couponApplied ? 'Applied' : 'Apply'}
-            </button>
-          </div>
+            <span className="px-3 h-8 text-xs font-bold rounded-lg flex-shrink-0 flex items-center gap-1 bg-[#4a3b1e] text-white">
+              {applied && <CheckCircle2 className="size-3.5" />}
+              {applied ? 'Change' : 'View all'}
+            </span>
+          </button>
         )}
 
         {/* Cart items */}
@@ -289,6 +310,19 @@ export default function CheckoutPage() {
         )}
       </div>
 
+      {sheetOpen && (
+        <CouponSheet
+          offers={offers}
+          appliedCode={applied?.coupon.code ?? null}
+          onApply={(offer) => {
+            setTouchedCoupon(true)
+            setAppliedCode(offer?.coupon.code ?? null)
+            setSheetOpen(false)
+          }}
+          onClose={() => setSheetOpen(false)}
+        />
+      )}
+
       {/* Sticky bottom: payment options + pay button */}
       <div className="sticky bottom-0 bg-white border-t border-[#e1e3e4] px-4 py-3">
         {outsideZone ? (
@@ -300,7 +334,7 @@ export default function CheckoutPage() {
           </Link>
         ) : (
           <Link
-            href={couponApplied && coupon ? `/checkout/payment?coupon=${coupon.code}` : '/checkout/payment'}
+            href={applied ? `/checkout/payment?coupon=${applied.coupon.code}` : '/checkout/payment'}
             className="flex items-center justify-between gap-3"
           >
             <div className="flex items-center gap-2 min-w-0">

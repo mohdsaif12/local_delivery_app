@@ -9,7 +9,8 @@ import * as Sentry from '@sentry/nextjs'
 import { User, Phone, KeyRound, ArrowRight, RefreshCw, CheckCircle2 } from 'lucide-react'
 
 export default function SignupPage() {
-  const [name, setName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [phone, setPhone] = useState('')
   const [otp, setOtp] = useState('')
   const [step, setStep] = useState<'details' | 'otp'>('details')
@@ -26,12 +27,15 @@ export default function SignupPage() {
   }, [resendCountdown])
 
   const cleanPhone = phone.replace(/\D/g, '')
+  const name = `${firstName.trim()} ${lastName.trim()}`.trim()
 
   const [sessionId, setSessionId] = useState('')
 
   async function handleSendOtp(e: React.SyntheticEvent) {
     e.preventDefault()
     if (!agreed) { toast.error('Please agree to the Terms & Conditions'); return }
+    if (!firstName.trim()) { toast.error('Please enter your first name'); return }
+    if (!lastName.trim()) { toast.error('Please enter your last name'); return }
     if (cleanPhone.length < 10) { toast.error('Please enter a valid 10-digit mobile number'); return }
 
     setLoading(true)
@@ -77,6 +81,8 @@ export default function SignupPage() {
           otp: otp.trim(),
           sessionId,
           name,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
         }),
       })
 
@@ -145,7 +151,7 @@ export default function SignupPage() {
           <div className="mt-8 bg-red-50/80 px-4 py-2 rounded-2xl border border-red-100/30 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-[#c0392b] animate-ping" />
             <span className="text-[11px] font-extrabold text-[#c0392b]">
-              Creating Account for {name || 'Foodie'}...
+              Creating Account for {firstName || 'Foodie'}...
             </span>
           </div>
 
@@ -187,19 +193,37 @@ export default function SignupPage() {
 
         {step === 'details' ? (
           <form onSubmit={handleSendOtp} className="space-y-5">
-            {/* Full Name */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 tracking-wide">Full Name</label>
-              <div className="relative flex items-center border-b border-gray-200 pb-2 focus-within:border-[#c0392b] transition-colors">
-                <User className="size-4 text-gray-300 mr-3 flex-shrink-0" />
-                <input
-                  type="text"
-                  placeholder="Enter your full name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none"
-                />
+            {/* First & Last Name — both required, so the profile and the
+                rider's delivery slip always carry a real name. */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5 tracking-wide">First Name</label>
+                <div className="relative flex items-center border-b border-gray-200 pb-2 focus-within:border-[#c0392b] transition-colors">
+                  <User className="size-4 text-gray-300 mr-2.5 flex-shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="First name"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                    autoComplete="given-name"
+                    className="flex-1 min-w-0 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5 tracking-wide">Last Name</label>
+                <div className="relative flex items-center border-b border-gray-200 pb-2 focus-within:border-[#c0392b] transition-colors">
+                  <input
+                    type="text"
+                    placeholder="Last name"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required
+                    autoComplete="family-name"
+                    className="flex-1 min-w-0 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none"
+                  />
+                </div>
               </div>
             </div>
 

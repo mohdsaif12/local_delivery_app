@@ -10,10 +10,12 @@ export interface Coupon {
   once_per_customer: boolean
   /** Optional admin-written banner text; falls back to a generated label. */
   description: string | null
+  /** Position in the customer's coupon list. Lowest is shown — and applied — first. */
+  sort_order: number
 }
 
 export const COUPON_FIELDS =
-  'code, discount_amount, discount_percent, max_discount, min_order_value, first_order_only, once_per_customer, description'
+  'code, discount_amount, discount_percent, max_discount, min_order_value, first_order_only, once_per_customer, description, sort_order'
 
 /** What this customer has already used up — decides which offers still apply. */
 export interface CouponState {
@@ -73,29 +75,62 @@ export function isCouponEligible(coupon: Coupon, state: CouponState): boolean {
   return true
 }
 
+/** One row of the coupon sheet: the offer, what it saves, and whether it applies yet. */
+export interface CouponOffer {
+  coupon: Coupon
+  /** What it would take off this cart — 0 while the cart is below its minimum. */
+  discount: number
+  /** True when it can be applied right now. */
+  available: boolean
+  /** Why it can't be applied yet, e.g. "Add ₹49 more to unlock". */
+  reason: string | null
+}
+
 /**
- * The best offer this customer can use right now. Coupons they have used up —
- * a welcome offer after their first order, a one-time offer after redeeming it
- * — are filtered out, leaving only what the admin still has running for them.
+ * Every offer this customer still owns, in the admin's sort_order — including
+ * the ones their cart hasn't reached yet, which the sheet shows locked so they
+ * can see what spending a little more would unlock.
+ *
+ * Offers they can never use again (a welcome offer after their first order, a
+ * one-time offer already redeemed) are left out entirely.
+ *
+ * NOTE: every threshold is measured against the food subtotal. The delivery fee
+ * is never discounted and never counts towards min_order_value.
  */
-export async function bestCoupon(
+export async function listCoupons(
   supabase: SupabaseClient,
   subtotal: number,
   state: CouponState
-): Promise<{ coupon: Coupon; discount: number } | null> {
+): Promise<CouponOffer[]> {
   const { data } = await supabase
     .from('coupons')
     .select(COUPON_FIELDS)
     .eq('is_active', true)
-    .lte('min_order_value', subtotal)
+    .order('sort_order', { ascending: true })
+    .order('code', { ascending: true })
 
-  return (
-    ((data ?? []) as Coupon[])
-      .filter((c) => isCouponEligible(c, state))
-      .map((coupon) => ({ coupon, discount: couponDiscount(coupon, subtotal) }))
-      .filter((c) => c.discount > 0)
-      .sort((a, b) => b.discount - a.discount)[0] ?? null
-  )
+  return ((data ?? []) as Coupon[])
+    .filter((coupon) => isCouponEligible(coupon, state))
+    .map((coupon) => {
+      const discount = couponDiscount(coupon, subtotal)
+      const short = coupon.min_order_value - subtotal
+      return {
+        coupon,
+        discount,
+        available: discount > 0,
+        reason: short > 0 ? `Add ₹${short} more to unlock` : null,
+      }
+    })
+}
+
+/**
+ * The offer applied by default — the first one in the admin's order that the
+ * cart already qualifies for, not the largest. The 10% coupon sits at the top
+ * of the list, so that is what a customer sees applied before they open the
+ * sheet and pick something else.
+ */
+export function defaultOffer(offers: CouponOffer[]): CouponOffer | null {
+  return offers.find((o) => o.available) ?? null
 }
 
 /** Human label for the banner, e.g. "10% off up to ₹100" or "Flat ₹50 off". */
